@@ -5,14 +5,14 @@ use nu_protocol::{
     engine::{Command, EngineState, Stack},
     Category, Example, PipelineData, ShellError, Signature, Span, Type, Value,
 };
-use polars::prelude::IntoSeries;
+use polars::prelude::{IntoSeries, Utf8NameSpaceImpl};
 
 #[derive(Clone)]
 pub struct ToUpperCase;
 
 impl Command for ToUpperCase {
     fn name(&self) -> &str {
-        "to-uppercase"
+        "uppercase"
     }
 
     fn usage(&self) -> &str {
@@ -26,7 +26,7 @@ impl Command for ToUpperCase {
     fn examples(&self) -> Vec<Example> {
         vec![Example {
             description: "Modifies strings to uppercase",
-            example: "[Abc aBc abC] | to-df | to-uppercase",
+            example: "[Abc aBc abC] | into df | uppercase",
             result: Some(
                 NuDataFrame::try_from_columns(vec![Column::new(
                     "0".to_string(),

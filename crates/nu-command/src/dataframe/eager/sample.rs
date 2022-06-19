@@ -40,6 +40,7 @@ impl Command for SampleDF {
                 Some('s'),
             )
             .switch("replace", "sample with replace", Some('e'))
+            .switch("shuffle", "shuffle sample", Some('u'))
             .category(Category::Custom("dataframe".into()))
     }
 
@@ -47,12 +48,12 @@ impl Command for SampleDF {
         vec![
             Example {
                 description: "Sample rows from dataframe",
-                example: "[[a b]; [1 2] [3 4]] | to-df | sample -n 1",
+                example: "[[a b]; [1 2] [3 4]] | into df | sample -n 1",
                 result: None, // No expected value because sampling is random
             },
             Example {
                 description: "Shows sample row using fraction and replace",
-                example: "[[a b]; [1 2] [3 4] [5 6]] | to-df | sample -f 0.5 -e",
+                example: "[[a b]; [1 2] [3 4] [5 6]] | into df | sample -f 0.5 -e",
                 result: None, // No expected value because sampling is random
             },
         ]
@@ -89,22 +90,26 @@ fn command(
         .get_flag::<i64>(engine_state, stack, "seed")?
         .map(|val| val as u64);
     let replace: bool = call.has_flag("replace");
+    let shuffle: bool = call.has_flag("shuffle");
 
     let df = NuDataFrame::try_from_pipeline(input, call.head)?;
 
     match (rows, fraction) {
-        (Some(rows), None) => df.as_ref().sample_n(rows.item, replace, seed).map_err(|e| {
-            ShellError::GenericError(
-                "Error creating sample".into(),
-                e.to_string(),
-                Some(rows.span),
-                None,
-                Vec::new(),
-            )
-        }),
+        (Some(rows), None) => df
+            .as_ref()
+            .sample_n(rows.item, replace, shuffle, seed)
+            .map_err(|e| {
+                ShellError::GenericError(
+                    "Error creating sample".into(),
+                    e.to_string(),
+                    Some(rows.span),
+                    None,
+                    Vec::new(),
+                )
+            }),
         (None, Some(frac)) => df
             .as_ref()
-            .sample_frac(frac.item, replace, seed)
+            .sample_frac(frac.item, replace, shuffle, seed)
             .map_err(|e| {
                 ShellError::GenericError(
                     "Error creating sample".into(),
