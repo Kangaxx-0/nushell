@@ -29,6 +29,10 @@ impl Command for Select {
         "Down-select table to only these columns."
     }
 
+    fn search_terms(&self) -> Vec<&str> {
+        vec!["pick", "choose", "get"]
+    }
+
     fn run(
         &self,
         engine_state: &EngineState,
@@ -203,7 +207,7 @@ impl Iterator for NthIterator {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if !self.skip {
-                if let Some(row) = self.rows.get(0) {
+                if let Some(row) = self.rows.first() {
                     if self.current == *row {
                         self.rows.remove(0);
                         self.current += 1;
@@ -216,7 +220,7 @@ impl Iterator for NthIterator {
                 } else {
                     return None;
                 }
-            } else if let Some(row) = self.rows.get(0) {
+            } else if let Some(row) = self.rows.first() {
                 if self.current == *row {
                     self.rows.remove(0);
                     self.current += 1;

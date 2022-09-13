@@ -4,7 +4,7 @@ use nu_command::create_default_context;
 use nu_engine::eval_block;
 use nu_parser::parse;
 use nu_protocol::{
-    engine::{EngineState, Stack, StateDelta, StateWorkingSet},
+    engine::{EngineState, Stack, StateWorkingSet},
     PipelineData, ShellError, Span, Value,
 };
 use nu_test_support::fs;
@@ -23,13 +23,10 @@ pub fn new_engine() -> (PathBuf, String, EngineState, Stack) {
     dir_str.push(SEP);
 
     // Create a new engine with default context
-    let mut engine_state = create_default_context(&dir);
+    let mut engine_state = create_default_context();
 
     // New stack
     let mut stack = Stack::new();
-
-    // New delta state
-    let delta = StateDelta::new(&engine_state);
 
     // Add pwd as env var
     stack.add_env_var(
@@ -53,8 +50,8 @@ pub fn new_engine() -> (PathBuf, String, EngineState, Stack) {
         },
     );
 
-    // Merge delta
-    let merge_result = engine_state.merge_delta(delta, Some(&mut stack), &dir);
+    // Merge environment into the permanent state
+    let merge_result = engine_state.merge_env(&mut stack, &dir);
     assert!(merge_result.is_ok());
 
     (dir, dir_str, engine_state, stack)
@@ -62,6 +59,15 @@ pub fn new_engine() -> (PathBuf, String, EngineState, Stack) {
 
 // match a list of suggestions with the expected values
 pub fn match_suggestions(expected: Vec<String>, suggestions: Vec<Suggestion>) {
+    let expected_len = expected.len();
+    let suggestions_len = suggestions.len();
+    if expected_len != suggestions_len {
+        panic!(
+            "\nexpected {expected_len} suggestions but got {suggestions_len}: \n\
+            Suggestions: {suggestions:#?} \n\
+            Expected: {expected:#?}\n"
+        )
+    }
     expected.iter().zip(suggestions).for_each(|it| {
         assert_eq!(it.0, &it.1.value);
     });
@@ -97,6 +103,11 @@ pub fn merge_input(
 
         (block, working_set.render())
     };
+
+    if let Err(err) = engine_state.merge_delta(delta) {
+        return Err(err);
+    }
+
     assert!(eval_block(
         engine_state,
         stack,
@@ -112,6 +123,6 @@ pub fn merge_input(
     )
     .is_ok());
 
-    // Merge delta
-    engine_state.merge_delta(delta, Some(stack), &dir)
+    // Merge environment into the permanent state
+    engine_state.merge_env(stack, &dir)
 }

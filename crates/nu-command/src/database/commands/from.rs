@@ -15,7 +15,7 @@ pub struct FromDb;
 
 impl Command for FromDb {
     fn name(&self) -> &str {
-        "from"
+        "from table"
     }
 
     fn usage(&self) -> &str {
@@ -35,30 +35,24 @@ impl Command for FromDb {
                 "Alias for the selected table",
                 Some('a'),
             )
+            .input_type(Type::Any)
+            .output_type(Type::Custom("database".into()))
             .category(Category::Custom("database".into()))
     }
 
     fn search_terms(&self) -> Vec<&str> {
-        vec!["database", "from"]
-    }
-
-    fn input_type(&self) -> Type {
-        Type::Custom("database".into())
-    }
-
-    fn output_type(&self) -> Type {
-        Type::Custom("database".into())
+        vec!["database"]
     }
 
     fn examples(&self) -> Vec<Example> {
         vec![Example {
             description: "Selects a table from database",
-            example: "open db.mysql | into db | from table_a | describe",
+            example: "open db.sqlite | from table table_a | describe",
             result: Some(Value::Record {
                 cols: vec!["connection".into(), "query".into()],
                 vals: vec![
                     Value::String {
-                        val: "db.mysql".into(),
+                        val: "db.sqlite".into(),
                         span: Span::test_data(),
                     },
                     Value::String {

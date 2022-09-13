@@ -19,6 +19,10 @@ impl Command for IsAdmin {
         Signature::build("is-admin").category(Category::Core)
     }
 
+    fn search_terms(&self) -> Vec<&str> {
+        vec!["root", "administrator", "superuser", "supervisor"]
+    }
+
     fn run(
         &self,
         _engine_state: &EngineState,

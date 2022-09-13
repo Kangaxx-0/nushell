@@ -31,28 +31,21 @@ impl Command for OrderByDb {
                 SyntaxShape::Any,
                 "Select expression(s) on the table",
             )
+            .input_type(Type::Custom("database".into()))
+            .output_type(Type::Custom("database".into()))
             .category(Category::Custom("database".into()))
     }
 
     fn search_terms(&self) -> Vec<&str> {
-        vec!["database", "order-by"]
-    }
-
-    fn input_type(&self) -> Type {
-        Type::Custom("database".into())
-    }
-
-    fn output_type(&self) -> Type {
-        Type::Custom("database".into())
+        vec!["database"]
     }
 
     fn examples(&self) -> Vec<Example> {
         vec![
             Example {
                 description: "orders query by a column",
-                example: r#"open db.mysql
-    | into db
-    | from table_a
+                example: r#"open db.sqlite
+    | from table table_a
     | select a
     | order-by a
     | describe"#,
@@ -60,7 +53,7 @@ impl Command for OrderByDb {
                     cols: vec!["connection".into(), "query".into()],
                     vals: vec![
                         Value::String {
-                            val: "db.mysql".into(),
+                            val: "db.sqlite".into(),
                             span: Span::test_data(),
                         },
                         Value::String {
@@ -73,9 +66,8 @@ impl Command for OrderByDb {
             },
             Example {
                 description: "orders query by column a ascending and by column b",
-                example: r#"open db.mysql
-    | into db
-    | from table_a
+                example: r#"open db.sqlite
+    | from table table_a
     | select a
     | order-by a --ascending
     | order-by b
@@ -84,7 +76,7 @@ impl Command for OrderByDb {
                     cols: vec!["connection".into(), "query".into()],
                     vals: vec![
                         Value::String {
-                            val: "db.mysql".into(),
+                            val: "db.sqlite".into(),
                             span: Span::test_data(),
                         },
                         Value::String {

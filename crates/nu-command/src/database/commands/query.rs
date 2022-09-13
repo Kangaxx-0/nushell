@@ -13,16 +13,18 @@ pub struct QueryDb;
 
 impl Command for QueryDb {
     fn name(&self) -> &str {
-        "query"
+        "query db"
     }
 
     fn signature(&self) -> Signature {
         Signature::build(self.name())
             .required(
-                "query",
+                "SQL",
                 SyntaxShape::String,
                 "SQL to execute against the database",
             )
+            .input_type(Type::Any)
+            .output_type(Type::Any)
             .category(Category::Custom("database".into()))
     }
 
@@ -30,18 +32,10 @@ impl Command for QueryDb {
         "Query a database using SQL."
     }
 
-    fn input_type(&self) -> Type {
-        Type::Custom("database".into())
-    }
-
-    fn output_type(&self) -> Type {
-        Type::Any
-    }
-
     fn examples(&self) -> Vec<Example> {
         vec![Example {
-            description: "Execute a query statement using the database connection",
-            example: r#"open foo.db | into db | query "SELECT * FROM Bar""#,
+            description: "Execute SQL against a SQLite database",
+            example: r#"open foo.db | query db "SELECT * FROM Bar""#,
             result: None,
         }]
     }

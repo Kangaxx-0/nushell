@@ -392,6 +392,74 @@ fn list_all_columns() {
     });
 }
 
+#[test]
+fn lists_with_directory_flag() {
+    Playground::setup("ls_test_flag_directory_1", |dirs, sandbox| {
+        sandbox
+            .within("dir_files")
+            .with_files(vec![EmptyFile("nushell.json")])
+            .within("dir_empty");
+        let actual = nu!(
+            cwd: dirs.test(), pipeline(
+            r#"
+                cd dir_empty;
+                ['.' '././.' '..' '../dir_files' '../dir_files/*']
+                | each { |it| ls --directory $it }
+                | flatten
+                | get name
+                | to text
+            "#
+        ));
+        let expected = [".", ".", "..", "../dir_files", "../dir_files/nushell.json"].join("");
+        #[cfg(windows)]
+        let expected = expected.replace('/', "\\");
+        assert_eq!(
+            actual.out, expected,
+            "column names are incorrect for ls --directory (-D)"
+        );
+    });
+}
+
+#[test]
+fn lists_with_directory_flag_without_argument() {
+    Playground::setup("ls_test_flag_directory_2", |dirs, sandbox| {
+        sandbox
+            .within("dir_files")
+            .with_files(vec![EmptyFile("nushell.json")])
+            .within("dir_empty");
+        // Test if there are some files in the current directory
+        let actual = nu!(
+            cwd: dirs.test(), pipeline(
+            r#"
+                cd dir_files;
+                ls --directory
+                | get name
+                | to text
+            "#
+        ));
+        let expected = ".";
+        assert_eq!(
+            actual.out, expected,
+            "column names are incorrect for ls --directory (-D)"
+        );
+        // Test if there is no file in the current directory
+        let actual = nu!(
+            cwd: dirs.test(), pipeline(
+            r#"
+                cd dir_empty;
+                ls -D
+                | get name
+                | to text
+            "#
+        ));
+        let expected = ".";
+        assert_eq!(
+            actual.out, expected,
+            "column names are incorrect for ls --directory (-D)"
+        );
+    });
+}
+
 /// Rust's fs::metadata function is unable to read info for certain system files on Windows,
 /// like the `C:\Windows\System32\Configuration` folder. https://github.com/rust-lang/rust/issues/96980
 /// This test confirms that Nu can work around this successfully.
@@ -436,4 +504,58 @@ fn can_list_system_folder() {
         r#"ls | where size > 10mb"#
     ));
     assert_eq!(ls_with_filter.err, "");
+}
+
+#[test]
+fn list_a_directory_not_exists() {
+    Playground::setup("ls_test_directory_not_exists", |dirs, _sandbox| {
+        let actual = nu!(cwd: dirs.test(), "ls a_directory_not_exists");
+        assert!(actual.err.contains("directory not found"));
+    })
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn list_directory_contains_invalid_utf8() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    Playground::setup(
+        "ls_test_directory_contains_invalid_utf8",
+        |dirs, _sandbox| {
+            let v: [u8; 4] = [7, 196, 144, 188];
+            let s = OsStr::from_bytes(&v);
+
+            let cwd = dirs.test();
+            let path = cwd.join(s);
+
+            std::fs::create_dir_all(&path).expect("failed to create directory");
+
+            let actual = nu!(cwd: cwd, "ls");
+
+            assert!(actual.out.contains("warning: get non-utf8 filename"));
+            assert!(actual.err.contains("No matches found for"));
+        },
+    )
+}
+
+#[test]
+fn list_ignores_ansi() {
+    Playground::setup("ls_test_ansi", |dirs, sandbox| {
+        sandbox.with_files(vec![
+            EmptyFile("los.txt"),
+            EmptyFile("tres.txt"),
+            EmptyFile("amigos.txt"),
+            EmptyFile("arepas.clu"),
+        ]);
+
+        let actual = nu!(
+            cwd: dirs.test(), pipeline(
+            r#"
+                ls | find .txt | each { ls $in.name } 
+            "#
+        ));
+
+        assert!(actual.err.is_empty());
+    })
 }

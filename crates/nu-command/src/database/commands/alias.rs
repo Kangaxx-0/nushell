@@ -19,6 +19,8 @@ impl Command for AliasDb {
     fn signature(&self) -> Signature {
         Signature::build(self.name())
             .required("alias", SyntaxShape::String, "alias name")
+            .input_type(Type::Custom("database".into()))
+            .output_type(Type::Custom("database".into()))
             .category(Category::Custom("database".into()))
     }
 
@@ -30,17 +32,16 @@ impl Command for AliasDb {
         vec![
             Example {
                 description: "Creates an alias for a selected table",
-                example: r#"open db.mysql
-    | into db
+                example: r#"open db.sqlite
+    | from table table_1
     | select a
-    | from table_1
     | as t1
     | describe"#,
                 result: Some(Value::Record {
                     cols: vec!["connection".into(), "query".into()],
                     vals: vec![
                         Value::String {
-                            val: "db.mysql".into(),
+                            val: "db.sqlite".into(),
                             span: Span::test_data(),
                         },
                         Value::String {
@@ -53,22 +54,20 @@ impl Command for AliasDb {
             },
             Example {
                 description: "Creates an alias for a derived table",
-                example: r#"open db.mysql
-    | into db
-    | select a
-    | from (
-        open db.mysql
-        | into db
+                example: r#"open db.sqlite
+    | from table (
+        open db.sqlite
+        | from table table_a
         | select a b
-        | from table_a
       )
+    | select a
     | as t1
     | describe"#,
                 result: Some(Value::Record {
                     cols: vec!["connection".into(), "query".into()],
                     vals: vec![
                         Value::String {
-                            val: "db.mysql".into(),
+                            val: "db.sqlite".into(),
                             span: Span::test_data(),
                         },
                         Value::String {
@@ -80,14 +79,6 @@ impl Command for AliasDb {
                 }),
             },
         ]
-    }
-
-    fn input_type(&self) -> Type {
-        Type::Custom("database".into())
-    }
-
-    fn output_type(&self) -> Type {
-        Type::Custom("database".into())
     }
 
     fn search_terms(&self) -> Vec<&str> {
@@ -154,15 +145,13 @@ fn alias_db(
                     Vec::new(),
                 )),
             },
-            s => {
-                return Err(ShellError::GenericError(
-                    "Connection doesn't define a query".into(),
-                    format!("Expected a connection with query. Got {}", s),
-                    Some(call.head),
-                    None,
-                    Vec::new(),
-                ))
-            }
+            s => Err(ShellError::GenericError(
+                "Connection doesn't define a query".into(),
+                format!("Expected a connection with query. Got {}", s),
+                Some(call.head),
+                None,
+                Vec::new(),
+            )),
         },
     }
 }

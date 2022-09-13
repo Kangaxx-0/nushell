@@ -77,54 +77,33 @@ pub fn print_table_or_error(
 
     match engine_state.find_decl("table".as_bytes(), &[]) {
         Some(decl_id) => {
-            let table = engine_state.get_decl(decl_id).run(
-                engine_state,
-                stack,
-                &Call::new(Span::new(0, 0)),
-                pipeline_data,
-            );
+            let command = engine_state.get_decl(decl_id);
+            if command.get_block_id().is_some() {
+                print_or_exit(pipeline_data, engine_state, config);
+            } else {
+                let table = command.run(
+                    engine_state,
+                    stack,
+                    &Call::new(Span::new(0, 0)),
+                    pipeline_data,
+                );
 
-            match table {
-                Ok(table) => {
-                    for item in table {
-                        if let Value::Error { error } = item {
-                            let working_set = StateWorkingSet::new(engine_state);
-
-                            report_error(&working_set, &error);
-
-                            std::process::exit(1);
-                        }
-
-                        let mut out = item.into_string("\n", config);
-                        out.push('\n');
-
-                        let _ = stdout_write_all_and_flush(out).map_err(|err| eprintln!("{}", err));
+                match table {
+                    Ok(table) => {
+                        print_or_exit(table, engine_state, config);
                     }
-                }
-                Err(error) => {
-                    let working_set = StateWorkingSet::new(engine_state);
+                    Err(error) => {
+                        let working_set = StateWorkingSet::new(engine_state);
 
-                    report_error(&working_set, &error);
+                        report_error(&working_set, &error);
 
-                    std::process::exit(1);
+                        std::process::exit(1);
+                    }
                 }
             }
         }
         None => {
-            for item in pipeline_data {
-                if let Value::Error { error } = item {
-                    let working_set = StateWorkingSet::new(engine_state);
-
-                    report_error(&working_set, &error);
-
-                    std::process::exit(1);
-                }
-
-                let mut out = item.into_string("\n", config);
-                out.push('\n');
-
-                let _ = stdout_write_all_and_flush(out).map_err(|err| eprintln!("{}", err));
-            }
+            print_or_exit(pipeline_data, engine_state, config);
         }
     };
 
@@ -139,5 +118,22 @@ pub fn print_table_or_error(
             })
     } else {
         None
+    }
+}
+
+fn print_or_exit(pipeline_data: PipelineData, engine_state: &mut EngineState, config: &Config) {
+    for item in pipeline_data {
+        if let Value::Error { error } = item {
+            let working_set = StateWorkingSet::new(engine_state);
+
+            report_error(&working_set, &error);
+
+            std::process::exit(1);
+        }
+
+        let mut out = item.into_string("\n", config);
+        out.push('\n');
+
+        let _ = stdout_write_all_and_flush(out).map_err(|err| eprintln!("{}", err));
     }
 }

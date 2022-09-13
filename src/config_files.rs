@@ -4,6 +4,7 @@ use nu_parser::ParseError;
 use nu_path::canonicalize_with;
 use nu_protocol::engine::{EngineState, Stack, StateWorkingSet};
 use nu_protocol::{PipelineData, Span, Spanned};
+use nu_utils::{get_default_config, get_default_env};
 use std::fs::File;
 use std::io::Write;
 
@@ -65,31 +66,37 @@ pub(crate) fn read_config_file(
                 .expect("Failed to read user input");
 
             let config_file = if is_env_config {
-                include_str!("../docs/sample_config/default_env.nu")
+                get_default_env()
             } else {
-                include_str!("../docs/sample_config/default_config.nu")
+                get_default_config()
             };
 
             match answer.to_lowercase().trim() {
-                "y" | "" => {
-                    let mut output = File::create(&config_path).expect("Unable to create file");
-                    write!(output, "{}", config_file).expect("Unable to write to config file");
-                    println!("Config file created at: {}", config_path.to_string_lossy());
-                }
+                "y" | "" => match File::create(&config_path) {
+                    Ok(mut output) => match write!(output, "{}", config_file) {
+                        Ok(_) => {
+                            println!("Config file created at: {}", config_path.to_string_lossy())
+                        }
+                        Err(_) => {
+                            eprintln!(
+                                "Unable to write to {}, sourcing default file instead",
+                                config_path.to_string_lossy(),
+                            );
+                            eval_default_config(engine_state, stack, config_file, is_env_config);
+                            return;
+                        }
+                    },
+                    Err(_) => {
+                        eprintln!(
+                            "Unable to create {}, sourcing default file instead",
+                            config_file
+                        );
+                        eval_default_config(engine_state, stack, config_file, is_env_config);
+                        return;
+                    }
+                },
                 _ => {
-                    println!("Continuing without config file");
-                    // Just use the contents of "default_config.nu" or "default_env.nu"
-                    eval_source(
-                        engine_state,
-                        stack,
-                        config_file.as_bytes(),
-                        if is_env_config {
-                            "default_env.nu"
-                        } else {
-                            "default_config.nu"
-                        },
-                        PipelineData::new(Span::new(0, 0)),
-                    );
+                    eval_default_config(engine_state, stack, config_file, is_env_config);
                     return;
                 }
             }
@@ -102,6 +109,7 @@ pub(crate) fn read_config_file(
         info!("read_config_file {}:{}:{}", file!(), line!(), column!());
     }
 }
+
 pub(crate) fn read_loginshell_file(
     engine_state: &mut EngineState,
     stack: &mut Stack,
@@ -119,5 +127,72 @@ pub(crate) fn read_loginshell_file(
 
     if is_perf_true {
         info!("read_loginshell_file {}:{}:{}", file!(), line!(), column!());
+    }
+}
+
+pub(crate) fn read_default_env_file(
+    engine_state: &mut EngineState,
+    stack: &mut Stack,
+    is_perf_true: bool,
+) {
+    let config_file = get_default_env();
+    eval_source(
+        engine_state,
+        stack,
+        config_file.as_bytes(),
+        "default_env.nu",
+        PipelineData::new(Span::new(0, 0)),
+    );
+
+    if is_perf_true {
+        info!("read_config_file {}:{}:{}", file!(), line!(), column!());
+    }
+    // Merge the environment in case env vars changed in the config
+    match nu_engine::env::current_dir(engine_state, stack) {
+        Ok(cwd) => {
+            if let Err(e) = engine_state.merge_env(stack, cwd) {
+                let working_set = StateWorkingSet::new(engine_state);
+                report_error(&working_set, &e);
+            }
+        }
+        Err(e) => {
+            let working_set = StateWorkingSet::new(engine_state);
+            report_error(&working_set, &e);
+        }
+    }
+}
+
+fn eval_default_config(
+    engine_state: &mut EngineState,
+    stack: &mut Stack,
+    config_file: &str,
+    is_env_config: bool,
+) {
+    println!("Continuing without config file");
+    // Just use the contents of "default_config.nu" or "default_env.nu"
+    eval_source(
+        engine_state,
+        stack,
+        config_file.as_bytes(),
+        if is_env_config {
+            "default_env.nu"
+        } else {
+            "default_config.nu"
+        },
+        PipelineData::new(Span::new(0, 0)),
+    );
+
+    // Merge the environment in case env vars changed in the config
+    match nu_engine::env::current_dir(engine_state, stack) {
+        Ok(cwd) => {
+            if let Err(e) = engine_state.merge_env(stack, cwd) {
+                let working_set = StateWorkingSet::new(engine_state);
+                report_error(&working_set, &e);
+            }
+        }
+        Err(e) => {
+            let working_set = StateWorkingSet::new(engine_state);
+            report_error(&working_set, &e);
+        }
     }
 }

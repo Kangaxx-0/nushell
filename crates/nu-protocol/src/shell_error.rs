@@ -269,6 +269,22 @@ pub enum ShellError {
         #[help] Option<String>,
     ),
 
+    /// Failed to convert a value of one type into a different type. Includes hint for what the first value is.
+    ///
+    /// ## Resolution
+    ///
+    /// Not all values can be coerced this way. Check the supported type(s) and try again.
+    #[error("Can't convert {1} `{2}` to {0}.")]
+    #[diagnostic(code(nu::shell::cant_convert_with_value), url(docsrs))]
+    CantConvertWithValue(
+        String,
+        String,
+        String,
+        #[label("can't be converted to {0}")] Span,
+        #[label("this {1} value...")] Span,
+        #[help] Option<String>,
+    ),
+
     /// An environment variable cannot be represented as a string.
     ///
     /// ## Resolution
@@ -284,6 +300,21 @@ Either make sure {0} is a string, or add a 'to_string' entry for it in ENV_CONVE
         )
     )]
     EnvVarNotAString(String, #[label("value not representable as a string")] Span),
+
+    /// This environment variable cannot be set manually.
+    ///
+    /// ## Resolution
+    ///
+    /// This environment variable is set automatically by Nushell and cannot not be set manually.
+    #[error("{0} cannot be set manually.")]
+    #[diagnostic(
+        code(nu::shell::automatic_env_var_set_manually),
+        url(docsrs),
+        help(
+            r#"The environment variable '{0}' is set automatically by Nushell and cannot not be set manually."#
+        )
+    )]
+    AutomaticEnvVarSetManually(String, #[label("cannot set '{0}' manually")] Span),
 
     /// Division by zero is not a thing.
     ///
@@ -373,7 +404,7 @@ Either make sure {0} is a string, or add a 'to_string' entry for it in ENV_CONVE
     /// ## Resolution
     ///
     /// This error is fairly generic. Refer to the specific error message for further details.
-    #[error("External command")]
+    #[error("External command failed")]
     #[diagnostic(code(nu::shell::external_command), url(docsrs), help("{1}"))]
     ExternalCommand(String, String, #[label("{0}")] Span),
 
@@ -462,7 +493,7 @@ Either make sure {0} is a string, or add a 'to_string' entry for it in ENV_CONVE
     ///
     /// ## Resolution
     ///
-    /// This is a failry generic error. Refer to the specific error message for further details.
+    /// This is a fairly generic error. Refer to the specific error message for further details.
     #[error("Plugin failed to load: {0}")]
     #[diagnostic(code(nu::shell::plugin_failed_to_load), url(docsrs))]
     PluginFailedToLoad(String),
@@ -485,6 +516,15 @@ Either make sure {0} is a string, or add a 'to_string' entry for it in ENV_CONVE
     #[diagnostic(code(nu::shell::plugin_failed_to_decode), url(docsrs))]
     PluginFailedToDecode(String),
 
+    /// I/O operation interrupted.
+    ///
+    /// ## Resolution
+    ///
+    /// This is a generic error. Refer to the specific error message for further details.
+    #[error("I/O interrupted")]
+    #[diagnostic(code(nu::shell::io_interrupted), url(docsrs))]
+    IOInterrupted(String, #[label("{0}")] Span),
+
     /// An I/O operation failed.
     ///
     /// ## Resolution
@@ -493,6 +533,33 @@ Either make sure {0} is a string, or add a 'to_string' entry for it in ENV_CONVE
     #[error("I/O error")]
     #[diagnostic(code(nu::shell::io_error), url(docsrs), help("{0}"))]
     IOError(String),
+
+    /// An I/O operation failed.
+    ///
+    /// ## Resolution
+    ///
+    /// This is a generic error. Refer to the specific error message for further details.
+    #[error("I/O error")]
+    #[diagnostic(code(nu::shell::io_error), url(docsrs))]
+    IOErrorSpanned(String, #[label("{0}")] Span),
+
+    /// Permission for an operation was denied.
+    ///
+    /// ## Resolution
+    ///
+    /// This is a generic error. Refer to the specific error message for further details.
+    #[error("Permission Denied")]
+    #[diagnostic(code(nu::shell::permission_denied), url(docsrs))]
+    PermissionDeniedError(String, #[label("{0}")] Span),
+
+    /// Out of memory.
+    ///
+    /// ## Resolution
+    ///
+    /// This is a generic error. Refer to the specific error message for further details.
+    #[error("Out of memory")]
+    #[diagnostic(code(nu::shell::out_of_memory), url(docsrs))]
+    OutOfMemoryError(String, #[label("{0}")] Span),
 
     /// Tried to `cd` to a path that isn't a directory.
     ///
@@ -610,6 +677,15 @@ Either make sure {0} is a string, or add a 'to_string' entry for it in ENV_CONVE
     #[diagnostic(code(nu::shell::name_not_found), url(docsrs))]
     DidYouMean(String, #[label("did you mean '{0}'?")] Span),
 
+    /// A name was not found. Did you mean a different name?
+    ///
+    /// ## Resolution
+    ///
+    /// The error message will suggest a possible match for what you meant.
+    #[error("{0}")]
+    #[diagnostic(code(nu::shell::did_you_mean_custom), url(docsrs))]
+    DidYouMeanCustom(String, String, #[label("did you mean '{1}'?")] Span),
+
     /// The given input must be valid UTF-8 for further processing.
     ///
     /// ## Resolution
@@ -704,6 +780,12 @@ Either make sure {0} is a string, or add a 'to_string' entry for it in ENV_CONVE
     #[error("Unexpected abbr component `{0}`.")]
     #[diagnostic(code(nu::shell::unexpected_path_abbreviateion), url(docsrs))]
     UnexpectedAbbrComponent(String),
+
+    // It should be only used by commands accepts block, and accept inputs from pipeline.
+    /// Failed to eval block with specific pipeline input.
+    #[error("Eval block failed with pipeline input")]
+    #[diagnostic(code(nu::shell::eval_block_with_input), url(docsrs))]
+    EvalBlockWithInput(#[label("source value")] Span, #[related] Vec<ShellError>),
 }
 
 impl From<std::io::Error> for ShellError {
@@ -722,6 +804,10 @@ impl From<Box<dyn std::error::Error + Send + Sync>> for ShellError {
     fn from(input: Box<dyn std::error::Error + Send + Sync>) -> ShellError {
         ShellError::IOError(format!("{:?}", input))
     }
+}
+
+pub fn into_code(err: &ShellError) -> Option<String> {
+    err.code().map(|code| code.to_string())
 }
 
 pub fn did_you_mean(possibilities: &[String], tried: &str) -> Option<String> {

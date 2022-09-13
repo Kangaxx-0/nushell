@@ -29,6 +29,8 @@ impl Command for GroupByDb {
                 SyntaxShape::Any,
                 "Select expression(s) on the table",
             )
+            .input_type(Type::Custom("database".into()))
+            .output_type(Type::Custom("database".into()))
             .category(Category::Custom("database".into()))
     }
 
@@ -36,21 +38,12 @@ impl Command for GroupByDb {
         vec!["database", "select"]
     }
 
-    fn input_type(&self) -> Type {
-        Type::Custom("database".into())
-    }
-
-    fn output_type(&self) -> Type {
-        Type::Custom("database".into())
-    }
-
     fn examples(&self) -> Vec<Example> {
         vec![
             Example {
                 description: "groups by column a and calculates the max",
-                example: r#"open db.mysql
-    | into db
-    | from table_a
+                example: r#"open db.sqlite
+    | from table table_a
     | select (fn max a)
     | group-by a
     | describe"#,
@@ -58,7 +51,7 @@ impl Command for GroupByDb {
                     cols: vec!["connection".into(), "query".into()],
                     vals: vec![
                         Value::String {
-                            val: "db.mysql".into(),
+                            val: "db.sqlite".into(),
                             span: Span::test_data(),
                         },
                         Value::String {
@@ -71,9 +64,8 @@ impl Command for GroupByDb {
             },
             Example {
                 description: "groups by column column a and counts records",
-                example: r#"open db.mysql
-    | into db
-    | from table_a
+                example: r#"open db.sqlite
+    | from table table_a
     | select (fn count *)
     | group-by a
     | describe"#,
@@ -81,7 +73,7 @@ impl Command for GroupByDb {
                     cols: vec!["connection".into(), "query".into()],
                     vals: vec![
                         Value::String {
-                            val: "db.mysql".into(),
+                            val: "db.sqlite".into(),
                             span: Span::test_data(),
                         },
                         Value::String {

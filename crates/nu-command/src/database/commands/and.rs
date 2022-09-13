@@ -25,6 +25,8 @@ impl Command for AndDb {
     fn signature(&self) -> Signature {
         Signature::build(self.name())
             .required("where", SyntaxShape::Any, "Where expression on the table")
+            .input_type(Type::Custom("database".into()))
+            .output_type(Type::Custom("database".into()))
             .category(Category::Custom("database".into()))
     }
 
@@ -32,22 +34,13 @@ impl Command for AndDb {
         vec!["database", "where"]
     }
 
-    fn input_type(&self) -> Type {
-        Type::Custom("database".into())
-    }
-
-    fn output_type(&self) -> Type {
-        Type::Custom("database".into())
-    }
-
     fn examples(&self) -> Vec<Example> {
         vec![
             Example {
                 description: "Selects a column from a database with an AND clause",
-                example: r#"open db.mysql
-    | into db
+                example: r#"open db.sqlite
+    | from table table_1
     | select a
-    | from table_1
     | where ((field a) > 1)
     | and ((field b) == 1)
     | describe"#,
@@ -55,7 +48,7 @@ impl Command for AndDb {
                     cols: vec!["connection".into(), "query".into()],
                     vals: vec![
                         Value::String {
-                            val: "db.mysql".into(),
+                            val: "db.sqlite".into(),
                             span: Span::test_data(),
                         },
                         Value::String {
@@ -68,10 +61,9 @@ impl Command for AndDb {
             },
             Example {
                 description: "Creates a AND clause combined with an expression AND",
-                example: r#"open db.mysql
-    | into db
+                example: r#"open db.sqlite
+    | from table table_1
     | select a
-    | from table_1
     | where ((field a) > 1 | and ((field a) < 10))
     | and ((field b) == 1)
     | describe"#,
@@ -79,7 +71,7 @@ impl Command for AndDb {
                     cols: vec!["connection".into(), "query".into()],
                     vals: vec![
                         Value::String {
-                            val: "db.mysql".into(),
+                            val: "db.sqlite".into(),
                             span: Span::test_data(),
                         },
                         Value::String {

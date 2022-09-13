@@ -6,16 +6,23 @@ use crate::{
 };
 use core::panic;
 use std::borrow::Borrow;
-use std::collections::HashSet;
 use std::path::Path;
-#[cfg(feature = "plugin")]
 use std::path::PathBuf;
 use std::{
-    collections::HashMap,
-    sync::{atomic::AtomicBool, Arc},
+    collections::{HashMap, HashSet, VecDeque},
+    sync::{atomic::AtomicBool, Arc, Mutex},
 };
 
 static PWD_ENV: &str = "PWD";
+
+// TODO: move to different file? where?
+/// An operation to be performed with the current buffer of the interactive shell.
+#[derive(Clone)]
+pub enum ReplOperation {
+    Append(String),
+    Insert(String),
+    Replace(String),
+}
 
 /// The core global engine state. This includes all global definitions as well as any global state that
 /// will persist for the whole session.
@@ -73,10 +80,13 @@ pub struct EngineState {
     pub env_vars: EnvVars,
     pub previous_env_vars: HashMap<String, Value>,
     pub config: Config,
+    pub repl_buffer_state: Arc<Mutex<Option<String>>>,
+    pub repl_operation_queue: Arc<Mutex<VecDeque<ReplOperation>>>,
     #[cfg(feature = "plugin")]
     pub plugin_signatures: Option<PathBuf>,
     #[cfg(not(windows))]
     sig_quit: Option<Arc<AtomicBool>>,
+    config_path: HashMap<String, PathBuf>,
 }
 
 pub const NU_VARIABLE_ID: usize = 0;
@@ -101,15 +111,22 @@ impl EngineState {
             blocks: vec![],
             modules: vec![Module::new()],
             // make sure we have some default overlay:
-            scope: ScopeFrame::with_empty_overlay(DEFAULT_OVERLAY_NAME.as_bytes().to_vec(), 0),
+            scope: ScopeFrame::with_empty_overlay(
+                DEFAULT_OVERLAY_NAME.as_bytes().to_vec(),
+                0,
+                false,
+            ),
             ctrlc: None,
             env_vars: EnvVars::from([(DEFAULT_OVERLAY_NAME.to_string(), HashMap::new())]),
             previous_env_vars: HashMap::new(),
             config: Config::default(),
+            repl_buffer_state: Arc::new(Mutex::new(None)),
+            repl_operation_queue: Arc::new(Mutex::new(VecDeque::new())),
             #[cfg(feature = "plugin")]
             plugin_signatures: None,
             #[cfg(not(windows))]
             sig_quit: None,
+            config_path: HashMap::new(),
         }
     }
 
@@ -120,12 +137,7 @@ impl EngineState {
     ///
     /// When we want to preserve what the parser has created, we can take its output (the `StateDelta`) and
     /// use this function to merge it into the global state.
-    pub fn merge_delta(
-        &mut self,
-        mut delta: StateDelta,
-        stack: Option<&mut Stack>,
-        cwd: impl AsRef<Path>,
-    ) -> Result<(), ShellError> {
+    pub fn merge_delta(&mut self, mut delta: StateDelta) -> Result<(), ShellError> {
         // Take the mutable reference and extend the permanent state from the working set
         self.files.extend(delta.files);
         self.file_contents.extend(delta.file_contents);
@@ -199,28 +211,34 @@ impl EngineState {
             return result;
         }
 
-        if let Some(stack) = stack {
-            for mut scope in stack.env_vars.drain(..) {
-                for (overlay_name, mut env) in scope.drain() {
-                    if let Some(env_vars) = self.env_vars.get_mut(&overlay_name) {
-                        // Updating existing overlay
-                        for (k, v) in env.drain() {
-                            if k == "config" {
-                                self.config = v.clone().into_config().unwrap_or_default();
-                            }
+        Ok(())
+    }
 
-                            env_vars.insert(k, v);
+    /// Merge the environment from the runtime Stack into the engine state
+    pub fn merge_env(
+        &mut self,
+        stack: &mut Stack,
+        cwd: impl AsRef<Path>,
+    ) -> Result<(), ShellError> {
+        for mut scope in stack.env_vars.drain(..) {
+            for (overlay_name, mut env) in scope.drain() {
+                if let Some(env_vars) = self.env_vars.get_mut(&overlay_name) {
+                    // Updating existing overlay
+                    for (k, v) in env.drain() {
+                        if k == "config" {
+                            self.config = v.clone().into_config().unwrap_or_default();
                         }
-                    } else {
-                        // Pushing a new overlay
-                        self.env_vars.insert(overlay_name, env);
+
+                        env_vars.insert(k, v);
                     }
+                } else {
+                    // Pushing a new overlay
+                    self.env_vars.insert(overlay_name, env);
                 }
             }
         }
 
-        // FIXME: permanent state changes like this hopefully in time can be removed
-        // and be replaced by just passing the cwd in where needed
+        // TODO: better error
         std::env::set_current_dir(cwd)?;
 
         Ok(())
@@ -360,11 +378,19 @@ impl EngineState {
                 self.plugin_decls().try_for_each(|decl| {
                     // A successful plugin registration already includes the plugin filename
                     // No need to check the None option
-                    let (path, encoding, shell) =
-                        decl.is_plugin().expect("plugin should have file name");
-                    let file_name = path
+                    let (path, shell) = decl.is_plugin().expect("plugin should have file name");
+                    let mut file_name = path
                         .to_str()
-                        .expect("path was checked during registration as a str");
+                        .expect("path was checked during registration as a str")
+                        .to_string();
+
+                    // Fix files or folders with quotes
+                    if file_name.contains('\'')
+                        || file_name.contains('"')
+                        || file_name.contains(' ')
+                    {
+                        file_name = format!("`{}`", file_name);
+                    }
 
                     serde_json::to_string_pretty(&decl.signature())
                         .map(|signature| {
@@ -379,14 +405,10 @@ impl EngineState {
                                 None => "".into(),
                             };
 
-                            // Each signature is stored in the plugin file with the required
-                            // encoding, shell and signature
+                            // Each signature is stored in the plugin file with the shell and signature
                             // This information will be used when loading the plugin
                             // information when nushell starts
-                            format!(
-                                "register {} -e {} {} {}\n\n",
-                                file_name, encoding, shell_str, signature
-                            )
+                            format!("register {} {} {}\n\n", file_name, shell_str, signature)
                         })
                         .map_err(|err| ShellError::PluginFailedToLoad(err.to_string()))
                         .and_then(|line| {
@@ -563,8 +585,7 @@ impl EngineState {
                 return &contents[(span.start - start)..(span.end - start)];
             }
         }
-
-        panic!("internal error: span missing in file contents cache")
+        &[0u8; 0]
     }
 
     pub fn get_config(&self) -> &Config {
@@ -719,6 +740,14 @@ impl EngineState {
         self.num_files() - 1
     }
 
+    pub fn get_cwd(&self) -> Option<String> {
+        if let Some(pwd_value) = self.get_env_var(PWD_ENV) {
+            pwd_value.as_string().ok()
+        } else {
+            None
+        }
+    }
+
     #[cfg(not(windows))]
     pub fn get_sig_quit(&self) -> &Option<Arc<AtomicBool>> {
         &self.sig_quit
@@ -733,6 +762,14 @@ impl EngineState {
     pub fn set_sig_quit(&mut self, sig_quit: Arc<AtomicBool>) {
         self.sig_quit = Some(sig_quit)
     }
+
+    pub fn set_config_path(&mut self, key: &str, val: PathBuf) {
+        self.config_path.insert(key.to_string(), val);
+    }
+
+    pub fn get_config_path(&self, key: &str) -> Option<&PathBuf> {
+        self.config_path.get(key)
+    }
 }
 
 /// A temporary extension to the global state. This handles bridging between the global state and the
@@ -745,6 +782,10 @@ pub struct StateWorkingSet<'a> {
     pub delta: StateDelta,
     pub external_commands: Vec<Vec<u8>>,
     pub type_scope: TypeScope,
+    /// Current working directory relative to the file being parsed right now
+    pub currently_parsed_cwd: Option<PathBuf>,
+    /// All previously parsed module files. Used to protect against circular imports.
+    pub parsed_module_files: Vec<PathBuf>,
 }
 
 /// A temporary placeholder for expression types. It is used to keep track of the input types
@@ -812,9 +853,11 @@ pub struct StateDelta {
 
 impl StateDelta {
     pub fn new(engine_state: &EngineState) -> Self {
+        let last_overlay = engine_state.last_overlay(&[]);
         let scope_frame = ScopeFrame::with_empty_overlay(
             engine_state.last_overlay_name(&[]).to_owned(),
-            engine_state.last_overlay(&[]).origin,
+            last_overlay.origin,
+            last_overlay.prefixed,
         );
 
         StateDelta {
@@ -917,6 +960,8 @@ impl<'a> StateWorkingSet<'a> {
             permanent_state,
             external_commands: vec![],
             type_scope: TypeScope::default(),
+            currently_parsed_cwd: None,
+            parsed_module_files: vec![],
         }
     }
 
@@ -968,7 +1013,7 @@ impl<'a> StateWorkingSet<'a> {
 
     pub fn add_decl(&mut self, decl: Box<dyn Command>) -> DeclId {
         let name = decl.name().as_bytes().to_vec();
-        let input_type = decl.input_type();
+        let input_type = decl.signature().input_type;
 
         self.delta.decls.push(decl);
         let decl_id = self.num_decls() - 1;
@@ -1266,7 +1311,13 @@ impl<'a> StateWorkingSet<'a> {
         if permanent_end <= span.start {
             for (contents, start, finish) in &self.delta.file_contents {
                 if (span.start >= *start) && (span.end <= *finish) {
-                    return &contents[(span.start - start)..(span.end - start)];
+                    let begin = span.start - start;
+                    let mut end = span.end - start;
+                    if begin > end {
+                        end = *finish - permanent_end;
+                    }
+
+                    return &contents[begin..end];
                 }
             }
         } else {
@@ -1705,16 +1756,16 @@ impl<'a> StateWorkingSet<'a> {
         self.permanent_state.has_overlay(name)
     }
 
-    pub fn find_overlay_origin(&self, name: &[u8]) -> Option<ModuleId> {
+    pub fn find_overlay(&self, name: &[u8]) -> Option<&OverlayFrame> {
         for scope_frame in self.delta.scope.iter().rev() {
             if let Some(overlay_id) = scope_frame.find_overlay(name) {
-                return Some(scope_frame.get_overlay(overlay_id).origin);
+                return Some(scope_frame.get_overlay(overlay_id));
             }
         }
 
         self.permanent_state
             .find_overlay(name)
-            .map(|id| self.permanent_state.get_overlay(id).origin)
+            .map(|id| self.permanent_state.get_overlay(id))
     }
 
     pub fn last_overlay_name(&self) -> &Vec<u8> {
@@ -1754,9 +1805,11 @@ impl<'a> StateWorkingSet<'a> {
     pub fn last_overlay_mut(&mut self) -> &mut OverlayFrame {
         if self.delta.last_overlay_mut().is_none() {
             // If there is no overlay, automatically activate the last one
+            let overlay_frame = self.last_overlay();
             let name = self.last_overlay_name().to_vec();
-            let origin = self.last_overlay().origin;
-            self.add_overlay(name, origin, vec![], vec![]);
+            let origin = overlay_frame.origin;
+            let prefixed = overlay_frame.prefixed;
+            self.add_overlay(name, origin, vec![], vec![], prefixed);
         }
 
         self.delta
@@ -1820,6 +1873,7 @@ impl<'a> StateWorkingSet<'a> {
         origin: ModuleId,
         decls: Vec<(Vec<u8>, DeclId)>,
         aliases: Vec<(Vec<u8>, AliasId)>,
+        prefixed: bool,
     ) {
         let last_scope_frame = self.delta.last_scope_frame_mut();
 
@@ -1834,7 +1888,7 @@ impl<'a> StateWorkingSet<'a> {
         } else {
             last_scope_frame
                 .overlays
-                .push((name, OverlayFrame::from_origin(origin)));
+                .push((name, OverlayFrame::from_origin(origin, prefixed)));
             last_scope_frame.overlays.len() - 1
         };
 
@@ -1852,7 +1906,7 @@ impl<'a> StateWorkingSet<'a> {
     pub fn remove_overlay(&mut self, name: &[u8], keep_custom: bool) {
         let last_scope_frame = self.delta.last_scope_frame_mut();
 
-        let removed_overlay_origin = if let Some(overlay_id) = last_scope_frame.find_overlay(name) {
+        let maybe_module_id = if let Some(overlay_id) = last_scope_frame.find_overlay(name) {
             last_scope_frame
                 .active_overlays
                 .retain(|id| id != &overlay_id);
@@ -1864,7 +1918,7 @@ impl<'a> StateWorkingSet<'a> {
                 .map(|id| self.permanent_state.get_overlay(id).origin)
         };
 
-        if let Some(module_id) = removed_overlay_origin {
+        if let Some(module_id) = maybe_module_id {
             last_scope_frame.removed_overlays.push(name.to_owned());
 
             if keep_custom {
@@ -1904,12 +1958,6 @@ impl Default for ScopeFrame {
         Self::new()
     }
 }
-
-// impl Default for OverlayFrame {
-//     fn default() -> Self {
-//         Self::new()
-//     }
-// }
 
 impl Default for EngineState {
     fn default() -> Self {
@@ -2033,8 +2081,7 @@ mod engine_state_tests {
             working_set.render()
         };
 
-        let cwd = std::env::current_dir().expect("Could not get current working directory.");
-        engine_state.merge_delta(delta, None, &cwd)?;
+        engine_state.merge_delta(delta)?;
 
         assert_eq!(engine_state.num_files(), 2);
         assert_eq!(&engine_state.files[0].0, "test.nu");

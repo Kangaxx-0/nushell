@@ -18,28 +18,27 @@ impl Command for ToDataBase {
         "Converts into an open db connection"
     }
 
+    fn extra_usage(&self) -> &str {
+        "This function is used as type hint for parser, specially if the query is not started with 'from table'"
+    }
+
     fn signature(&self) -> Signature {
-        Signature::build(self.name()).category(Category::Custom("database".into()))
+        Signature::build(self.name())
+            .input_type(Type::Any)
+            .output_type(Type::Custom("database".into()))
+            .category(Category::Custom("database".into()))
     }
 
     fn search_terms(&self) -> Vec<&str> {
-        vec!["database", "into", "db"]
+        vec!["database", "convert"]
     }
 
     fn examples(&self) -> Vec<Example> {
         vec![Example {
             description: "Converts an open file into a db object",
-            example: "open db.mysql | into db",
+            example: "open db.sqlite | into db",
             result: None,
         }]
-    }
-
-    fn input_type(&self) -> Type {
-        Type::Any
-    }
-
-    fn output_type(&self) -> Type {
-        Type::Custom("database".into())
     }
 
     fn run(

@@ -6,8 +6,6 @@ use nu_protocol::{
     engine::{Command, EngineState, Stack},
     Category, Example, PipelineData, ShellError, Signature, Span, SyntaxShape, Type, Value,
 };
-use polars::prelude::Expr;
-
 #[derive(Clone)]
 pub struct LazySelect;
 
@@ -27,6 +25,8 @@ impl Command for LazySelect {
                 SyntaxShape::Any,
                 "Expression(s) that define the column selection",
             )
+            .input_type(Type::Custom("dataframe".into()))
+            .output_type(Type::Custom("dataframe".into()))
             .category(Category::Custom("lazyframe".into()))
     }
 
@@ -45,14 +45,6 @@ impl Command for LazySelect {
         }]
     }
 
-    fn input_type(&self) -> Type {
-        Type::Custom("dataframe".into())
-    }
-
-    fn output_type(&self) -> Type {
-        Type::Custom("dataframe".into())
-    }
-
     fn run(
         &self,
         engine_state: &EngineState,
@@ -66,17 +58,6 @@ impl Command for LazySelect {
             span: call.head,
         };
         let expressions = NuExpression::extract_exprs(value)?;
-
-        if expressions
-            .iter()
-            .any(|expr| !matches!(expr, Expr::Column(..)))
-        {
-            let value: Value = call.req(engine_state, stack, 0)?;
-            return Err(ShellError::IncompatibleParametersSingle(
-                "Expected only Col expressions".into(),
-                value.span()?,
-            ));
-        }
 
         let lazy = NuLazyFrame::try_from_pipeline(input, call.head)?;
         let lazy = NuLazyFrame::new(lazy.from_eager, lazy.into_polars().select(&expressions));

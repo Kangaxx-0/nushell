@@ -27,31 +27,25 @@ impl Command for ProjectionDb {
                 SyntaxShape::Any,
                 "Select expression(s) on the table",
             )
+            .input_type(Type::Custom("database".into()))
+            .output_type(Type::Custom("database".into()))
             .category(Category::Custom("database".into()))
     }
 
     fn search_terms(&self) -> Vec<&str> {
-        vec!["database", "select"]
-    }
-
-    fn input_type(&self) -> Type {
-        Type::Custom("database".into())
-    }
-
-    fn output_type(&self) -> Type {
-        Type::Custom("database".into())
+        vec!["database"]
     }
 
     fn examples(&self) -> Vec<Example> {
         vec![
             Example {
                 description: "selects a column from a database",
-                example: "open db.mysql | into db | select a | describe",
+                example: "open db.sqlite | into db | select a | describe",
                 result: Some(Value::Record {
                     cols: vec!["connection".into(), "query".into()],
                     vals: vec![
                         Value::String {
-                            val: "db.mysql".into(),
+                            val: "db.sqlite".into(),
                             span: Span::test_data(),
                         },
                         Value::String {
@@ -64,16 +58,16 @@ impl Command for ProjectionDb {
             },
             Example {
                 description: "selects columns from a database using alias",
-                example: r#"open db.mysql
+                example: r#"open db.sqlite
     | into db
     | select (field a | as new_a) b c
-    | from table_1
+    | from table table_1
     | describe"#,
                 result: Some(Value::Record {
                     cols: vec!["connection".into(), "query".into()],
                     vals: vec![
                         Value::String {
-                            val: "db.mysql".into(),
+                            val: "db.sqlite".into(),
                             span: Span::test_data(),
                         },
                         Value::String {

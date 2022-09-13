@@ -1,3 +1,5 @@
+mod bits;
+mod bytes;
 mod charting;
 mod conversions;
 mod core_commands;
@@ -19,10 +21,13 @@ mod path;
 mod platform;
 mod random;
 mod shells;
+mod sort_utils;
 mod strings;
 mod system;
 mod viewers;
 
+pub use bits::*;
+pub use bytes::*;
 pub use charting::*;
 pub use conversions::*;
 pub use core_commands::*;
@@ -45,6 +50,7 @@ pub use path::*;
 pub use platform::*;
 pub use random::*;
 pub use shells::*;
+pub use sort_utils::*;
 pub use strings::*;
 pub use system::*;
 pub use viewers::*;

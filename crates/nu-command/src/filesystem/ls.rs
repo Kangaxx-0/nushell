@@ -56,6 +56,11 @@ impl Command for Ls {
                 "Display the apparent directory size in place of the directory metadata size",
                 Some('d'),
             )
+            .switch(
+                "directory",
+                "List the specified directory itself instead of its contents",
+                Some('D'),
+            )
             .category(Category::FileSystem)
     }
 
@@ -71,11 +76,26 @@ impl Command for Ls {
         let short_names = call.has_flag("short-names");
         let full_paths = call.has_flag("full-paths");
         let du = call.has_flag("du");
+        let directory = call.has_flag("directory");
         let ctrl_c = engine_state.ctrlc.clone();
         let call_span = call.head;
         let cwd = current_dir(engine_state, stack)?;
 
         let pattern_arg: Option<Spanned<String>> = call.opt(engine_state, stack, 0)?;
+
+        let pattern_arg = {
+            if let Some(path) = pattern_arg {
+                Some(Spanned {
+                    item: match strip_ansi_escapes::strip(&path.item) {
+                        Ok(item) => String::from_utf8(item).unwrap_or(path.item),
+                        Err(_) => path.item,
+                    },
+                    span: path.span,
+                })
+            } else {
+                pattern_arg
+            }
+        };
 
         let (path, p_tag, absolute_path) = match pattern_arg {
             Some(p) => {
@@ -83,7 +103,8 @@ impl Command for Ls {
                 let mut p = expand_to_real_path(p.item);
 
                 let expanded = nu_path::expand_path_with(&p, &cwd);
-                if expanded.is_dir() {
+                // Avoid checking and pushing "*" to the path when directory (do not show contents) flag is true
+                if !directory && expanded.is_dir() {
                     if permission_denied(&p) {
                         #[cfg(unix)]
                         let error_msg = format!(
@@ -116,7 +137,10 @@ impl Command for Ls {
                 (p, p_tag, absolute_path)
             }
             None => {
-                if is_empty_dir(current_dir(engine_state, stack)?) {
+                // Avoid pushing "*" to the default path when directory (do not show contents) flag is true
+                if directory {
+                    (PathBuf::from("."), call_span, false)
+                } else if is_empty_dir(current_dir(engine_state, stack)?) {
                     return Ok(Value::nothing(call_span).into_pipeline_data());
                 } else {
                     (PathBuf::from("./*"), call_span, false)
@@ -178,13 +202,30 @@ impl Command for Ls {
                         Some(path.to_string_lossy().to_string())
                     } else if let Some(prefix) = &prefix {
                         if let Ok(remainder) = path.strip_prefix(&prefix) {
-                            let new_prefix = if let Some(pfx) = diff_paths(&prefix, &cwd) {
-                                pfx
-                            } else {
-                                prefix.to_path_buf()
-                            };
+                            if directory {
+                                // When the path is the same as the cwd, path_diff should be "."
+                                let path_diff =
+                                    if let Some(path_diff_not_dot) = diff_paths(&path, &cwd) {
+                                        let path_diff_not_dot = path_diff_not_dot.to_string_lossy();
+                                        if path_diff_not_dot.is_empty() {
+                                            ".".to_string()
+                                        } else {
+                                            path_diff_not_dot.to_string()
+                                        }
+                                    } else {
+                                        path.to_string_lossy().to_string()
+                                    };
 
-                            Some(new_prefix.join(remainder).to_string_lossy().to_string())
+                                Some(path_diff)
+                            } else {
+                                let new_prefix = if let Some(pfx) = diff_paths(&prefix, &cwd) {
+                                    pfx
+                                } else {
+                                    prefix.to_path_buf()
+                                };
+
+                                Some(new_prefix.join(remainder).to_string_lossy().to_string())
+                            }
                         } else {
                             Some(path.to_string_lossy().to_string())
                         }
@@ -268,6 +309,12 @@ impl Command for Ls {
                 example: "ls -s ~ | where type == dir && modified < ((date now) - 7day)",
                 result: None,
             },
+            Example {
+                description: "List given paths, show directories themselves",
+                example:
+                    "['/path/to/directory' '/path/to/file'] | each { |it| ls -D $it } | flatten",
+                result: None,
+            },
         ]
     }
 }
@@ -310,11 +357,7 @@ fn is_hidden_dir(dir: impl AsRef<Path>) -> bool {
 }
 
 fn path_contains_hidden_folder(path: &Path, folders: &[PathBuf]) -> bool {
-    let path_str = path.to_str().expect("failed to read path");
-    if folders
-        .iter()
-        .any(|p| path_str.starts_with(&p.to_str().expect("failed to read hidden paths")))
-    {
+    if folders.iter().any(|p| path.starts_with(p.as_path())) {
         return true;
     }
     false

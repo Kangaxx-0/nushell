@@ -6,6 +6,8 @@ use nu_protocol::{
     Category, Example, PipelineData, ShellError, Signature, Span, Type, Value,
 };
 
+use polars::prelude::SeriesMethods;
+
 #[derive(Clone)]
 pub struct ValueCount;
 
@@ -19,7 +21,10 @@ impl Command for ValueCount {
     }
 
     fn signature(&self) -> Signature {
-        Signature::build(self.name()).category(Category::Custom("dataframe".into()))
+        Signature::build(self.name())
+            .input_type(Type::Custom("dataframe".into()))
+            .output_type(Type::Custom("dataframe".into()))
+            .category(Category::Custom("dataframe".into()))
     }
 
     fn examples(&self) -> Vec<Example> {
@@ -43,14 +48,6 @@ impl Command for ValueCount {
         }]
     }
 
-    fn input_type(&self) -> Type {
-        Type::Custom("dataframe".into())
-    }
-
-    fn output_type(&self) -> Type {
-        Type::Custom("dataframe".into())
-    }
-
     fn run(
         &self,
         engine_state: &EngineState,
@@ -71,7 +68,7 @@ fn command(
     let df = NuDataFrame::try_from_pipeline(input, call.head)?;
     let series = df.as_series(call.head)?;
 
-    let res = series.value_counts(false).map_err(|e| {
+    let res = series.value_counts(false, false).map_err(|e| {
         ShellError::GenericError(
             "Error calculating value counts values".into(),
             e.to_string(),

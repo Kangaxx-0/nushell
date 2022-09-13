@@ -25,35 +25,28 @@ impl Command for WhereDb {
     fn signature(&self) -> Signature {
         Signature::build(self.name())
             .required("where", SyntaxShape::Any, "Where expression on the table")
+            .input_type(Type::Custom("database".into()))
+            .output_type(Type::Custom("database".into()))
             .category(Category::Custom("database".into()))
     }
 
     fn search_terms(&self) -> Vec<&str> {
-        vec!["database", "where"]
-    }
-
-    fn input_type(&self) -> Type {
-        Type::Custom("database".into())
-    }
-
-    fn output_type(&self) -> Type {
-        Type::Custom("database".into())
+        vec!["database"]
     }
 
     fn examples(&self) -> Vec<Example> {
         vec![Example {
             description: "selects a column from a database with a where clause",
-            example: r#"open db.mysql
-    | into db
+            example: r#"open db.sqlite
+    | from table table_1
     | select a
-    | from table_1
     | where ((field a) > 1)
     | describe"#,
             result: Some(Value::Record {
                 cols: vec!["connection".into(), "query".into()],
                 vals: vec![
                     Value::String {
-                        val: "db.mysql".into(),
+                        val: "db.sqlite".into(),
                         span: Span::test_data(),
                     },
                     Value::String {

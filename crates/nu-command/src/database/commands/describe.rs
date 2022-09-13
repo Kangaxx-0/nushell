@@ -15,25 +15,20 @@ impl Command for DescribeDb {
     }
 
     fn signature(&self) -> Signature {
-        Signature::build(self.name()).category(Category::Custom("database".into()))
+        Signature::build(self.name())
+            .input_type(Type::Custom("database".into()))
+            .output_type(Type::Any)
+            .category(Category::Custom("database".into()))
     }
 
     fn usage(&self) -> &str {
         "Describes connection and query of the DB object"
     }
 
-    fn input_type(&self) -> Type {
-        Type::Custom("database".into())
-    }
-
-    fn output_type(&self) -> Type {
-        Type::Any
-    }
-
     fn examples(&self) -> Vec<Example> {
         vec![Example {
             description: "Describe SQLite database constructed query",
-            example: "open foo.db | into db | select col_1 | from table_1 | describe",
+            example: "open foo.db | from table table_1 | select col_1 | describe",
             result: Some(Value::Record {
                 cols: vec!["connection".into(), "query".into()],
                 vals: vec![
@@ -52,7 +47,7 @@ impl Command for DescribeDb {
     }
 
     fn search_terms(&self) -> Vec<&str> {
-        vec!["database", "SQLite", "describe"]
+        vec!["database", "SQLite"]
     }
 
     fn run(

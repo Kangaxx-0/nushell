@@ -107,6 +107,19 @@ fn passes_binary_data_between_externals() {
     )
 }
 
+#[test]
+fn command_not_found_error_suggests_search_term() {
+    // 'distinct' is not a command, but it is a search term for 'uniq'
+    let actual = nu!(cwd: ".", "ls | distinct");
+    assert!(actual.err.contains("uniq"));
+}
+
+#[test]
+fn command_not_found_error_suggests_typo_fix() {
+    let actual = nu!(cwd: ".", "benhcmark { echo 'foo'}");
+    assert!(actual.err.contains("benchmark"));
+}
+
 mod it_evaluation {
     use super::nu;
     use nu_test_support::fs::Stub::{EmptyFile, FileWithContent, FileWithContentToBeTrimmed};
@@ -301,6 +314,7 @@ mod nu_commands {
     }
 
     #[test]
+    #[ignore = "For now we have no way to check LAST_EXIT_CODE in tests, ignore it for now"]
     fn failed_with_proper_exit_code() {
         Playground::setup("external failed", |dirs, _sandbox| {
             let actual = nu!(cwd: dirs.test(), r#"

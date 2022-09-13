@@ -10,6 +10,7 @@ use crate::BlockId;
 use crate::PipelineData;
 use crate::ShellError;
 use crate::SyntaxShape;
+use crate::Type;
 use crate::VarId;
 use std::fmt::Write;
 
@@ -42,6 +43,8 @@ pub enum Category {
     Default,
     Conversions,
     Core,
+    Bits,
+    Bytes,
     Date,
     Env,
     Experimental,
@@ -90,6 +93,8 @@ impl std::fmt::Display for Category {
             Category::Chart => "chart",
             Category::Custom(name) => name,
             Category::Deprecated => "deprecated",
+            Category::Bytes => "bytes",
+            Category::Bits => "bits",
         };
 
         write!(f, "{}", msg)
@@ -106,6 +111,8 @@ pub struct Signature {
     pub optional_positional: Vec<PositionalArg>,
     pub rest_positional: Option<PositionalArg>,
     pub named: Vec<Flag>,
+    pub input_type: Type,
+    pub output_type: Type,
     pub is_filter: bool,
     pub creates_scope: bool,
     // Signature category used to classify commands stored in the list of declarations
@@ -135,6 +142,8 @@ impl Signature {
             required_positional: vec![],
             optional_positional: vec![],
             rest_positional: None,
+            input_type: Type::Any,
+            output_type: Type::Any,
             named: vec![],
             is_filter: false,
             creates_scope: false,
@@ -311,6 +320,18 @@ impl Signature {
             default_value: None,
         });
 
+        self
+    }
+
+    /// Changes the input type of the command signature
+    pub fn input_type(mut self, input_type: Type) -> Signature {
+        self.input_type = input_type;
+        self
+    }
+
+    /// Changes the output type of the command signature
+    pub fn output_type(mut self, output_type: Type) -> Signature {
+        self.output_type = output_type;
         self
     }
 

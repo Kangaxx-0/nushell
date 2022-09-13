@@ -11,6 +11,7 @@ pub struct Module {
     pub decls: IndexMap<Vec<u8>, DeclId>,
     pub aliases: IndexMap<Vec<u8>, AliasId>,
     pub env_vars: IndexMap<Vec<u8>, BlockId>,
+    pub env_block: Option<BlockId>,
     pub span: Option<Span>,
 }
 
@@ -20,6 +21,7 @@ impl Module {
             decls: IndexMap::new(),
             aliases: IndexMap::new(),
             env_vars: IndexMap::new(),
+            env_block: None,
             span: None,
         }
     }
@@ -29,20 +31,25 @@ impl Module {
             decls: IndexMap::new(),
             aliases: IndexMap::new(),
             env_vars: IndexMap::new(),
+            env_block: None,
             span: Some(span),
         }
     }
 
-    pub fn add_decl(&mut self, name: &[u8], decl_id: DeclId) -> Option<DeclId> {
-        self.decls.insert(name.to_vec(), decl_id)
+    pub fn add_decl(&mut self, name: Vec<u8>, decl_id: DeclId) -> Option<DeclId> {
+        self.decls.insert(name, decl_id)
     }
 
-    pub fn add_alias(&mut self, name: &[u8], alias_id: AliasId) -> Option<AliasId> {
-        self.aliases.insert(name.to_vec(), alias_id)
+    pub fn add_alias(&mut self, name: Vec<u8>, alias_id: AliasId) -> Option<AliasId> {
+        self.aliases.insert(name, alias_id)
     }
 
-    pub fn add_env_var(&mut self, name: &[u8], block_id: BlockId) -> Option<BlockId> {
-        self.env_vars.insert(name.to_vec(), block_id)
+    pub fn add_env_var(&mut self, name: Vec<u8>, block_id: BlockId) -> Option<BlockId> {
+        self.env_vars.insert(name, block_id)
+    }
+
+    pub fn add_env_block(&mut self, block_id: BlockId) {
+        self.env_block = Some(block_id);
     }
 
     pub fn extend(&mut self, other: &Module) {

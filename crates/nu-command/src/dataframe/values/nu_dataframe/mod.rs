@@ -400,9 +400,15 @@ impl NuDataFrame {
 
         let values = (0..size)
             .into_iter()
-            .map(|_| {
+            .map(|i| {
                 let mut cols = vec![];
                 let mut vals = vec![];
+
+                cols.push("index".into());
+                vals.push(Value::Int {
+                    val: (i + from_row) as i64,
+                    span,
+                });
 
                 for (name, col) in &mut iterators {
                     cols.push(name.clone());
@@ -440,7 +446,7 @@ impl NuDataFrame {
         // sorting dataframe by the first column
         let column_names = self.as_ref().get_column_names();
         let first_col = column_names
-            .get(0)
+            .first()
             .expect("already checked that dataframe is different than 0");
 
         // if unable to sort, then unable to compare

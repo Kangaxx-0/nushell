@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::{ast::Call, BlockId, Example, PipelineData, ShellError, Signature, Type};
+use crate::{ast::Call, BlockId, Example, PipelineData, ShellError, Signature};
 
 use super::{EngineState, Stack};
 
@@ -23,10 +23,6 @@ pub trait Command: Send + Sync + CommandClone {
         input: PipelineData,
     ) -> Result<PipelineData, ShellError>;
 
-    fn is_binary(&self) -> bool {
-        false
-    }
-
     fn examples(&self) -> Vec<Example> {
         Vec::new()
     }
@@ -41,6 +37,16 @@ pub trait Command: Send + Sync + CommandClone {
         false
     }
 
+    // This is an enhanced method to determine if a command is custom command or not
+    // since extern "foo" [] and def "foo" [] behaves differently
+    fn is_custom_command(&self) -> bool {
+        if self.get_block_id().is_some() {
+            true
+        } else {
+            self.is_known_external()
+        }
+    }
+
     // Is a sub command
     fn is_sub(&self) -> bool {
         self.name().contains(' ')
@@ -51,9 +57,8 @@ pub trait Command: Send + Sync + CommandClone {
         false
     }
 
-    // Is a plugin command (returns plugin's path, encoding and type of shell
-    // if the declaration is a plugin)
-    fn is_plugin(&self) -> Option<(&PathBuf, &str, &Option<PathBuf>)> {
+    // Is a plugin command (returns plugin's path, type of shell if the declaration is a plugin)
+    fn is_plugin(&self) -> Option<(&PathBuf, &Option<PathBuf>)> {
         None
     }
 
@@ -65,20 +70,6 @@ pub trait Command: Send + Sync + CommandClone {
     // Related terms to help with command search
     fn search_terms(&self) -> Vec<&str> {
         vec![]
-    }
-
-    // Command input type. The Type is used during parsing to find the
-    // correct internal command with similar names. The input type is
-    // obtained from the previous expression found in the pipeline
-    fn input_type(&self) -> Type {
-        Type::Any
-    }
-
-    // Command output type. The output type is the value from  the command
-    // It is used during parsing to find the next command in case there
-    // are commands with similar names
-    fn output_type(&self) -> Type {
-        Type::Any
     }
 }
 

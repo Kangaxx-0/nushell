@@ -29,6 +29,8 @@ impl Command for SetWithIndex {
                 "list of indices indicating where to set the value",
                 Some('i'),
             )
+            .input_type(Type::Custom("dataframe".into()))
+            .output_type(Type::Custom("dataframe".into()))
             .category(Category::Custom("dataframe".into()))
     }
 
@@ -54,14 +56,6 @@ impl Command for SetWithIndex {
                 .into_value(Span::test_data()),
             ),
         }]
-    }
-
-    fn input_type(&self) -> Type {
-        Type::Custom("dataframe".into())
-    }
-
-    fn output_type(&self) -> Type {
-        Type::Custom("dataframe".into())
     }
 
     fn run(
@@ -152,7 +146,7 @@ fn command(
             NuDataFrame::try_from_series(vec![res.into_series()], call.head)
         }
         Value::Float { val, span } => {
-            let chunked = series.as_ref().f64().map_err(|e| {
+            let chunked = series.f64().map_err(|e| {
                 ShellError::GenericError(
                     "Error casting to f64".into(),
                     e.to_string(),
@@ -175,7 +169,7 @@ fn command(
             NuDataFrame::try_from_series(vec![res.into_series()], call.head)
         }
         Value::String { val, span } => {
-            let chunked = series.as_ref().utf8().map_err(|e| {
+            let chunked = series.utf8().map_err(|e| {
                 ShellError::GenericError(
                     "Error casting to string".into(),
                     e.to_string(),
