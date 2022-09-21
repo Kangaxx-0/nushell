@@ -19,8 +19,11 @@ use nu_protocol::{
     Spanned, Type, Value, VarId,
 };
 use reedline::{DefaultHinter, EditCommand, Emacs, SqliteBackedHistory, Vi};
-use std::io::{self, Write};
-use std::{sync::atomic::Ordering, time::Instant};
+use std::{
+    io::{self, Write},
+    sync::atomic::Ordering,
+    time::Instant,
+};
 use strip_ansi_escapes::strip;
 use sysinfo::SystemExt;
 
@@ -98,14 +101,21 @@ pub fn evaluate_repl(
         );
     }
 
-    // Get the config once for the history `max_history_size`
-    // Updating that will not be possible in one session
-    let config = engine_state.get_config();
-
     if is_perf_true {
         info!("setup reedline {}:{}:{}", file!(), line!(), column!());
     }
+
     let mut line_editor = Reedline::create();
+
+    // Now that reedline is created, get the history session id and store it in engine_state
+    let hist_sesh = match line_editor.get_history_session_id() {
+        Some(id) => i64::from(id),
+        None => 0,
+    };
+    engine_state.history_session_id = hist_sesh;
+
+    let config = engine_state.get_config();
+
     let history_path = crate::config_files::get_history_path(
         nushell_path,
         engine_state.config.history_file_format,
@@ -332,6 +342,7 @@ pub fn evaluate_repl(
 
         match input {
             Ok(Signal::Success(s)) => {
+                let hostname = sys.host_name();
                 let history_supports_meta =
                     matches!(config.history_file_format, HistoryFileFormat::Sqlite);
                 if history_supports_meta && !s.is_empty() && line_editor.has_last_command_context()
@@ -339,7 +350,7 @@ pub fn evaluate_repl(
                     line_editor
                         .update_last_command_context(&|mut c| {
                             c.start_timestamp = Some(chrono::Utc::now());
-                            c.hostname = sys.host_name();
+                            c.hostname = hostname.clone();
 
                             c.cwd = Some(StateWorkingSet::new(engine_state).get_cwd());
                             c
@@ -479,6 +490,21 @@ pub fn evaluate_repl(
                     run_ansi_sequence(&get_command_finished_marker(stack, engine_state))?;
                     if let Some(cwd) = stack.get_env_var(engine_state, "PWD") {
                         let path = cwd.as_string()?;
+
+                        // Communicate the path as OSC 7 (often used for spawning new tabs in the same dir)
+                        run_ansi_sequence(&format!(
+                            "\x1b]7;file://{}{}{}\x1b\\",
+                            percent_encoding::utf8_percent_encode(
+                                &hostname.unwrap_or_else(|| "localhost".to_string()),
+                                percent_encoding::CONTROLS
+                            ),
+                            if path.starts_with('/') { "" } else { "/" },
+                            percent_encoding::utf8_percent_encode(
+                                &path,
+                                percent_encoding::CONTROLS
+                            )
+                        ))?;
+
                         // Try to abbreviate string for windows title
                         let maybe_abbrev_path = if let Some(p) = nu_path::home_dir() {
                             path.replace(&p.as_path().display().to_string(), "~")
