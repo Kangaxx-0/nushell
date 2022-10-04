@@ -201,7 +201,7 @@ fn eval_external(
     input: PipelineData,
     redirect_stdout: bool,
     redirect_stderr: bool,
-) -> Result<(PipelineData, bool), ShellError> {
+) -> Result<PipelineData, ShellError> {
     let decl_id = engine_state
         .find_decl("run-external".as_bytes(), &[])
         .ok_or(ShellError::ExternalNotSupported(head.span))?;
@@ -238,54 +238,7 @@ fn eval_external(
         ))
     }
 
-    // when the external command doesn't redirect output, we eagerly check the result
-    // and find if the command runs to failed.
-    let mut runs_to_failed = false;
-    let result = command.run(engine_state, stack, &call, input)?;
-    if let PipelineData::ExternalStream {
-        stdout: None,
-        stderr,
-        mut exit_code,
-        span,
-        metadata,
-    } = result
-    {
-        let exit_code = exit_code.take();
-        match exit_code {
-            Some(exit_code_stream) => {
-                let ctrlc = exit_code_stream.ctrlc.clone();
-                let exit_code: Vec<Value> = exit_code_stream.into_iter().collect();
-                if let Some(Value::Int { val: code, .. }) = exit_code.last() {
-                    // if exit_code is not 0, it indicates error occured, return back Err.
-                    if *code != 0 {
-                        runs_to_failed = true;
-                    }
-                }
-                Ok((
-                    PipelineData::ExternalStream {
-                        stdout: None,
-                        stderr,
-                        exit_code: Some(ListStream::from_stream(exit_code.into_iter(), ctrlc)),
-                        span,
-                        metadata,
-                    },
-                    runs_to_failed,
-                ))
-            }
-            None => Ok((
-                PipelineData::ExternalStream {
-                    stdout: None,
-                    stderr,
-                    exit_code: None,
-                    span,
-                    metadata,
-                },
-                runs_to_failed,
-            )),
-        }
-    } else {
-        Ok((result, runs_to_failed))
-    }
+    command.run(engine_state, stack, &call, input)
 }
 
 pub fn eval_expression(
@@ -383,7 +336,6 @@ pub fn eval_expression(
                 false,
                 false,
             )?
-            .0
             .into_value(span))
         }
         Expr::DateTime(dt) => Ok(Value::Date {
@@ -408,7 +360,7 @@ pub fn eval_expression(
 
             match op {
                 Operator::And => {
-                    if !lhs.is_true() {
+                    if lhs.is_false() {
                         Ok(Value::Bool {
                             val: false,
                             span: expr.span,
@@ -682,7 +634,6 @@ pub fn eval_expression_with_input(
     redirect_stdout: bool,
     redirect_stderr: bool,
 ) -> Result<(PipelineData, bool), ShellError> {
-    let mut external_failed = false;
     match expr {
         Expression {
             expr: Expr::Call(call),
@@ -702,7 +653,7 @@ pub fn eval_expression_with_input(
             expr: Expr::ExternalCall(head, args),
             ..
         } => {
-            let external_result = eval_external(
+            input = eval_external(
                 engine_state,
                 stack,
                 head,
@@ -711,8 +662,6 @@ pub fn eval_expression_with_input(
                 redirect_stdout,
                 redirect_stderr,
             )?;
-            input = external_result.0;
-            external_failed = external_result.1
         }
 
         Expression {
@@ -728,9 +677,63 @@ pub fn eval_expression_with_input(
         elem => {
             input = eval_expression(engine_state, stack, elem)?.into_pipeline_data();
         }
-    }
+    };
 
-    Ok((input, external_failed))
+    Ok(might_consume_external_result(input))
+}
+
+// if the result is ExternalStream without redirecting output.
+// that indicates we have no more commands to execute currently.
+// we can try to catch and detect if external command runs to failed.
+//
+// This is useful to commands with semicolon, we can detect errors early to avoid
+// commands after semicolon running.
+fn might_consume_external_result(input: PipelineData) -> (PipelineData, bool) {
+    let mut runs_to_failed = false;
+    if let PipelineData::ExternalStream {
+        stdout: None,
+        stderr,
+        mut exit_code,
+        span,
+        metadata,
+    } = input
+    {
+        let exit_code = exit_code.take();
+        match exit_code {
+            Some(exit_code_stream) => {
+                let ctrlc = exit_code_stream.ctrlc.clone();
+                let exit_code: Vec<Value> = exit_code_stream.into_iter().collect();
+                if let Some(Value::Int { val: code, .. }) = exit_code.last() {
+                    // if exit_code is not 0, it indicates error occured, return back Err.
+                    if *code != 0 {
+                        runs_to_failed = true;
+                    }
+                }
+                (
+                    PipelineData::ExternalStream {
+                        stdout: None,
+                        stderr,
+                        exit_code: Some(ListStream::from_stream(exit_code.into_iter(), ctrlc)),
+                        span,
+                        metadata,
+                    },
+                    runs_to_failed,
+                )
+            }
+            None => (
+                PipelineData::ExternalStream {
+                    stdout: None,
+                    stderr,
+                    exit_code: None,
+                    span,
+                    metadata,
+                },
+                runs_to_failed,
+            ),
+        }
+    } else {
+        (input, false)
+    }
 }
 
 pub fn eval_block(
@@ -1538,20 +1541,36 @@ fn compute(size: i64, unit: Unit, span: Span) -> Value {
             val: size * 1000 * 1000 * 1000,
             span,
         },
-        Unit::Minute => Value::Duration {
-            val: size * 1000 * 1000 * 1000 * 60,
-            span,
+        Unit::Minute => match size.checked_mul(1000 * 1000 * 1000 * 60) {
+            Some(val) => Value::Duration { val, span },
+            None => Value::Error {
+                error: ShellError::GenericError(
+                    "duration too large".into(),
+                    "duration too large".into(),
+                    Some(span),
+                    None,
+                    Vec::new(),
+                ),
+            },
         },
-        Unit::Hour => Value::Duration {
-            val: size * 1000 * 1000 * 1000 * 60 * 60,
-            span,
+        Unit::Hour => match size.checked_mul(1000 * 1000 * 1000 * 60 * 60) {
+            Some(val) => Value::Duration { val, span },
+            None => Value::Error {
+                error: ShellError::GenericError(
+                    "duration too large".into(),
+                    "duration too large".into(),
+                    Some(span),
+                    None,
+                    Vec::new(),
+                ),
+            },
         },
         Unit::Day => match size.checked_mul(1000 * 1000 * 1000 * 60 * 60 * 24) {
             Some(val) => Value::Duration { val, span },
             None => Value::Error {
                 error: ShellError::GenericError(
-                    "day duration too large".into(),
-                    "day duration too large".into(),
+                    "duration too large".into(),
+                    "duration too large".into(),
                     Some(span),
                     None,
                     Vec::new(),
@@ -1562,44 +1581,8 @@ fn compute(size: i64, unit: Unit, span: Span) -> Value {
             Some(val) => Value::Duration { val, span },
             None => Value::Error {
                 error: ShellError::GenericError(
-                    "week duration too large".into(),
-                    "week duration too large".into(),
-                    Some(span),
-                    None,
-                    Vec::new(),
-                ),
-            },
-        },
-        Unit::Month => match size.checked_mul(1000 * 1000 * 1000 * 60 * 60 * 24 * 30) {
-            Some(val) => Value::Duration { val, span },
-            None => Value::Error {
-                error: ShellError::GenericError(
-                    "month duration too large".into(),
-                    "month duration too large".into(),
-                    Some(span),
-                    None,
-                    Vec::new(),
-                ),
-            },
-        },
-        Unit::Year => match size.checked_mul(1000 * 1000 * 1000 * 60 * 60 * 24 * 365) {
-            Some(val) => Value::Duration { val, span },
-            None => Value::Error {
-                error: ShellError::GenericError(
-                    "year duration too large".into(),
-                    "year duration too large".into(),
-                    Some(span),
-                    None,
-                    Vec::new(),
-                ),
-            },
-        },
-        Unit::Decade => match size.checked_mul(1000 * 1000 * 1000 * 60 * 60 * 24 * 365 * 10) {
-            Some(val) => Value::Duration { val, span },
-            None => Value::Error {
-                error: ShellError::GenericError(
-                    "decade duration too large".into(),
-                    "decade duration too large".into(),
+                    "duration too large".into(),
+                    "duration too large".into(),
                     Some(span),
                     None,
                     Vec::new(),

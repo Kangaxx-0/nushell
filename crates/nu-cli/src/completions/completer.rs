@@ -60,10 +60,10 @@ impl NuCompleter {
     fn external_completion(
         &self,
         block_id: BlockId,
-        spans: Vec<String>,
+        spans: &[String],
         offset: usize,
         span: Span,
-    ) -> Vec<Suggestion> {
+    ) -> Option<Vec<Suggestion>> {
         let stack = self.stack.clone();
         let block = self.engine_state.get_block(block_id);
         let mut callee_stack = stack.gather_captures(&block.captures);
@@ -75,9 +75,9 @@ impl NuCompleter {
                     var_id,
                     Value::List {
                         vals: spans
-                            .into_iter()
+                            .iter()
                             .map(|it| Value::String {
-                                val: it,
+                                val: it.to_string(),
                                 span: Span::unknown(),
                             })
                             .collect(),
@@ -109,13 +109,13 @@ impl NuCompleter {
                         offset,
                     );
 
-                    return result;
+                    return Some(result);
                 }
             }
             Err(err) => println!("failed to eval completer block: {}", err),
         }
 
-        vec![]
+        None
     }
 
     fn completion_helper(&mut self, line: &str, pos: usize) -> Vec<Suggestion> {
@@ -123,7 +123,8 @@ impl NuCompleter {
         let offset = working_set.next_span_start();
         let (mut new_line, alias_offset) = try_find_alias(line.as_bytes(), &working_set);
         let initial_line = line.to_string();
-        new_line.push(b'a');
+        let alias_total_offset: usize = alias_offset.iter().sum();
+        new_line.insert(alias_total_offset + pos, b'a');
         let pos = offset + pos;
         let config = self.engine_state.get_config();
 
@@ -169,9 +170,10 @@ impl NuCompleter {
                             }
                         };
 
-                        // Parses the prefix
+                        // Parses the prefix. Completion should look up to the cursor position, not after.
                         let mut prefix = working_set.get_span_contents(flat.0).to_vec();
-                        prefix.remove(pos - (flat.0.start - span_offset));
+                        let index = pos - (flat.0.start - span_offset);
+                        prefix.drain(index..);
 
                         // Variables completion
                         if prefix.starts_with(b"$") || most_left_var.is_some() {
@@ -211,7 +213,11 @@ impl NuCompleter {
                             // We got no results for internal completion
                             // now we can check if external completer is set and use it
                             if let Some(block_id) = config.external_completer {
-                                return self.external_completion(block_id, spans, offset, new_span);
+                                if let Some(external_result) =
+                                    self.external_completion(block_id, &spans, offset, new_span)
+                                {
+                                    return external_result;
+                                }
                             }
                         }
 
@@ -338,6 +344,15 @@ impl NuCompleter {
                                     return out;
                                 }
 
+                                // Try to complete using an external completer (if set)
+                                if let Some(block_id) = config.external_completer {
+                                    if let Some(external_result) =
+                                        self.external_completion(block_id, &spans, offset, new_span)
+                                    {
+                                        return external_result;
+                                    }
+                                }
+
                                 // Check for file completion
                                 let mut completer = FileCompletion::new(self.engine_state.clone());
                                 out = self.process_completion(
@@ -351,12 +366,6 @@ impl NuCompleter {
 
                                 if !out.is_empty() {
                                     return out;
-                                }
-
-                                // Try to complete using an exnternal compelter (if set)
-                                if let Some(block_id) = config.external_completer {
-                                    return self
-                                        .external_completion(block_id, spans, offset, new_span);
                                 }
                             }
                         };
@@ -422,7 +431,7 @@ fn search_alias(input: &[u8], working_set: &StateWorkingSet) -> Option<MatchedAl
     }
     // Push the rest to names vector.
     if pos < input.len() {
-        vec_names.push((&input[pos..]).to_owned());
+        vec_names.push(input[pos..].to_owned());
     }
 
     for name in &vec_names {
