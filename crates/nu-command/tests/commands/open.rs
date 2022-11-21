@@ -208,7 +208,7 @@ fn parses_utf16_ini() {
     assert_eq!(actual.out, "-236")
 }
 
-#[cfg(feature = "database")]
+#[cfg(feature = "dataframe")]
 #[test]
 fn parses_arrow_ipc() {
     let actual = nu!(
@@ -298,4 +298,16 @@ fn open_ignore_ansi() {
 
         assert!(actual.err.is_empty());
     })
+}
+
+#[test]
+fn open_no_parameter() {
+    let actual = nu!(
+        cwd: "tests/fixtures/formats",
+        r#"
+            open
+        "#
+    );
+
+    assert!(actual.err.contains("needs filename"));
 }

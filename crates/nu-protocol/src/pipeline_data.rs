@@ -56,6 +56,7 @@ pub struct PipelineMetadata {
 #[derive(Debug, Clone)]
 pub enum DataSource {
     Ls,
+    HtmlThemes,
 }
 
 impl PipelineData {
@@ -87,6 +88,15 @@ impl PipelineData {
 
     pub fn is_nothing(&self) -> bool {
         matches!(self, PipelineData::Value(Value::Nothing { .. }, ..))
+    }
+
+    /// PipelineData doesn't always have a Span, but we can try!
+    pub fn span(&self) -> Option<Span> {
+        match self {
+            PipelineData::ListStream(..) => None,
+            PipelineData::ExternalStream { span, .. } => Some(*span),
+            PipelineData::Value(v, _) => v.span().ok(),
+        }
     }
 
     pub fn into_value(self, span: Span) -> Value {
@@ -185,31 +195,46 @@ impl PipelineData {
             PipelineData::ExternalStream {
                 stdout: Some(s), ..
             } => {
-                let mut items = vec![];
+                let mut output = String::new();
 
                 for val in s {
                     match val {
-                        Ok(val) => {
-                            items.push(val);
-                        }
-                        Err(e) => {
-                            return Err(e);
-                        }
+                        Ok(val) => match val.as_string() {
+                            Ok(s) => output.push_str(&s),
+                            Err(err) => return Err(err),
+                        },
+                        Err(e) => return Err(e),
                     }
                 }
-
-                let mut output = String::new();
-                for item in items {
-                    match item.as_string() {
-                        Ok(s) => output.push_str(&s),
-                        Err(err) => {
-                            return Err(err);
-                        }
-                    }
-                }
-
                 Ok(output)
             }
+        }
+    }
+
+    /// Retrieves string from pipline data.
+    ///
+    /// As opposed to `collect_string` this raises error rather than converting non-string values.
+    /// The `span` will be used if `ListStream` is encountered since it doesn't carry a span.
+    pub fn collect_string_strict(
+        self,
+        span: Span,
+    ) -> Result<(String, Option<PipelineMetadata>), ShellError> {
+        match self {
+            PipelineData::Value(Value::String { val, .. }, metadata) => Ok((val, metadata)),
+            PipelineData::Value(val, _) => {
+                Err(ShellError::TypeMismatch("string".into(), val.span()?))
+            }
+            PipelineData::ListStream(_, _) => Err(ShellError::TypeMismatch("string".into(), span)),
+            PipelineData::ExternalStream {
+                stdout: None,
+                metadata,
+                ..
+            } => Ok((String::new(), metadata)),
+            PipelineData::ExternalStream {
+                stdout: Some(stdout),
+                metadata,
+                ..
+            } => Ok((stdout.into_string()?.item, metadata)),
         }
     }
 
@@ -424,7 +449,7 @@ impl PipelineData {
         stack: &mut Stack,
         no_newline: bool,
         to_stderr: bool,
-    ) -> Result<(), ShellError> {
+    ) -> Result<i64, ShellError> {
         // If the table function is in the declarations, then we can use it
         // to create the table value that will be printed in the terminal
 
@@ -433,29 +458,18 @@ impl PipelineData {
 
         if let PipelineData::ExternalStream {
             stdout: stream,
+            stderr: stderr_stream,
             exit_code,
             ..
         } = self
         {
-            if let Some(stream) = stream {
-                for s in stream {
-                    let s_live = s?;
-                    let bin_output = s_live.as_binary()?;
-
-                    if !to_stderr {
-                        stdout_write_all_and_flush(bin_output)?
-                    } else {
-                        stderr_write_all_and_flush(bin_output)?
-                    }
-                }
+            return print_if_stream(stream, stderr_stream, to_stderr, exit_code);
+            /*
+            if let Ok(exit_code) = print_if_stream(stream, stderr_stream, to_stderr, exit_code) {
+                return Ok(exit_code);
             }
-
-            // Make sure everything has finished
-            if let Some(exit_code) = exit_code {
-                let _: Vec<_> = exit_code.into_iter().collect();
-            }
-
-            return Ok(());
+            return Ok(0);
+            */
         }
 
         match engine_state.find_decl("table".as_bytes(), &[]) {
@@ -474,7 +488,7 @@ impl PipelineData {
             }
         };
 
-        Ok(())
+        Ok(0)
     }
 
     fn write_all_and_flush(
@@ -483,7 +497,7 @@ impl PipelineData {
         config: &Config,
         no_newline: bool,
         to_stderr: bool,
-    ) -> Result<(), ShellError> {
+    ) -> Result<i64, ShellError> {
         for item in self {
             let mut out = if let Value::Error { error } = item {
                 let working_set = StateWorkingSet::new(engine_state);
@@ -506,7 +520,7 @@ impl PipelineData {
             }
         }
 
-        Ok(())
+        Ok(0)
     }
 }
 
@@ -551,6 +565,42 @@ impl IntoIterator for PipelineData {
     }
 }
 
+pub fn print_if_stream(
+    stream: Option<RawStream>,
+    stderr_stream: Option<RawStream>,
+    to_stderr: bool,
+    exit_code: Option<ListStream>,
+) -> Result<i64, ShellError> {
+    // NOTE: currently we don't need anything from stderr
+    // so directly consumes `stderr_stream` to make sure that everything is done.
+    std::thread::spawn(move || stderr_stream.map(|x| x.into_bytes()));
+    if let Some(stream) = stream {
+        for s in stream {
+            let s_live = s?;
+            let bin_output = s_live.as_binary()?;
+
+            if !to_stderr {
+                stdout_write_all_and_flush(bin_output)?
+            } else {
+                stderr_write_all_and_flush(bin_output)?
+            }
+        }
+    }
+
+    // Make sure everything has finished
+    if let Some(exit_code) = exit_code {
+        let mut exit_codes: Vec<_> = exit_code.into_iter().collect();
+        return match exit_codes.pop() {
+            #[cfg(unix)]
+            Some(Value::Error { error }) => Err(error),
+            Some(Value::Int { val, .. }) => Ok(val),
+            _ => Ok(0),
+        };
+    }
+
+    Ok(0)
+}
+
 impl Iterator for PipelineIterator {
     type Item = Value;
 
@@ -573,6 +623,10 @@ impl Iterator for PipelineIterator {
 
 pub trait IntoPipelineData {
     fn into_pipeline_data(self) -> PipelineData;
+    fn into_pipeline_data_with_metadata(
+        self,
+        metadata: impl Into<Option<PipelineMetadata>>,
+    ) -> PipelineData;
 }
 
 impl<V> IntoPipelineData for V
@@ -582,13 +636,19 @@ where
     fn into_pipeline_data(self) -> PipelineData {
         PipelineData::Value(self.into(), None)
     }
+    fn into_pipeline_data_with_metadata(
+        self,
+        metadata: impl Into<Option<PipelineMetadata>>,
+    ) -> PipelineData {
+        PipelineData::Value(self.into(), metadata.into())
+    }
 }
 
 pub trait IntoInterruptiblePipelineData {
     fn into_pipeline_data(self, ctrlc: Option<Arc<AtomicBool>>) -> PipelineData;
     fn into_pipeline_data_with_metadata(
         self,
-        metadata: PipelineMetadata,
+        metadata: impl Into<Option<PipelineMetadata>>,
         ctrlc: Option<Arc<AtomicBool>>,
     ) -> PipelineData;
 }
@@ -611,7 +671,7 @@ where
 
     fn into_pipeline_data_with_metadata(
         self,
-        metadata: PipelineMetadata,
+        metadata: impl Into<Option<PipelineMetadata>>,
         ctrlc: Option<Arc<AtomicBool>>,
     ) -> PipelineData {
         PipelineData::ListStream(
@@ -619,7 +679,7 @@ where
                 stream: Box::new(self.into_iter().map(Into::into)),
                 ctrlc,
             },
-            Some(metadata),
+            metadata.into(),
         )
     }
 }

@@ -59,8 +59,10 @@ pub fn create_default_context() -> EngineState {
             Let,
             Metadata,
             Module,
+            Mut,
             Use,
             Version,
+            While,
         };
 
         // Charts
@@ -158,11 +160,16 @@ pub fn create_default_context() -> EngineState {
         bind_command! {
             Benchmark,
             Complete,
-            Exec,
             External,
             NuCheck,
             Sys,
         };
+
+        #[cfg(unix)]
+        bind_command! { Exec }
+
+        #[cfg(windows)]
+        bind_command! { RegistryQuery }
 
         #[cfg(any(
             target_os = "android",
@@ -177,7 +184,6 @@ pub fn create_default_context() -> EngineState {
 
         // Strings
         bind_command! {
-            BuildString,
             Char,
             Decode,
             Encode,
@@ -399,10 +405,7 @@ pub fn create_default_context() -> EngineState {
             Fetch,
             Post,
             Url,
-            UrlHost,
-            UrlPath,
-            UrlQuery,
-            UrlScheme,
+            UrlParse,
             Port,
         }
 

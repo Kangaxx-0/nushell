@@ -92,6 +92,8 @@ pub struct EngineState {
     sig_quit: Option<Arc<AtomicBool>>,
     config_path: HashMap<String, PathBuf>,
     pub history_session_id: i64,
+    // If Nushell was started, e.g., with `nu spam.nu`, the file's parent is stored here
+    pub currently_parsed_cwd: Option<PathBuf>,
 }
 
 pub const NU_VARIABLE_ID: usize = 0;
@@ -105,11 +107,11 @@ impl EngineState {
             files: vec![],
             file_contents: vec![],
             vars: vec![
-                Variable::new(Span::new(0, 0), Type::Any),
-                Variable::new(Span::new(0, 0), Type::Any),
-                Variable::new(Span::new(0, 0), Type::Any),
-                Variable::new(Span::new(0, 0), Type::Any),
-                Variable::new(Span::new(0, 0), Type::Any),
+                Variable::new(Span::new(0, 0), Type::Any, false),
+                Variable::new(Span::new(0, 0), Type::Any, false),
+                Variable::new(Span::new(0, 0), Type::Any, false),
+                Variable::new(Span::new(0, 0), Type::Any, false),
+                Variable::new(Span::new(0, 0), Type::Any, false),
             ],
             decls: vec![],
             aliases: vec![],
@@ -134,6 +136,7 @@ impl EngineState {
             sig_quit: None,
             config_path: HashMap::new(),
             history_session_id: 0,
+            currently_parsed_cwd: None,
         }
     }
 
@@ -249,6 +252,15 @@ impl EngineState {
         std::env::set_current_dir(cwd)?;
 
         Ok(())
+    }
+
+    /// Mark a starting point if it is a script (e.g., nu spam.nu)
+    pub fn start_in_file(&mut self, file_path: Option<&str>) {
+        self.currently_parsed_cwd = if let Some(path) = file_path {
+            Path::new(path).parent().map(PathBuf::from)
+        } else {
+            None
+        };
     }
 
     pub fn has_overlay(&self, name: &[u8]) -> bool {
@@ -546,6 +558,26 @@ impl EngineState {
         None
     }
 
+    pub fn which_module_has_decl(&self, name: &[u8]) -> Option<&[u8]> {
+        for (module_id, m) in self.modules.iter().enumerate() {
+            if m.has_decl(name) {
+                for overlay_frame in self.active_overlays(&[]).iter() {
+                    let module_name = overlay_frame.modules.iter().find_map(|(key, &val)| {
+                        if val == module_id {
+                            Some(key)
+                        } else {
+                            None
+                        }
+                    });
+                    if let Some(final_name) = module_name {
+                        return Some(&final_name[..]);
+                    }
+                }
+            }
+        }
+        None
+    }
+
     pub fn find_overlay(&self, name: &[u8]) -> Option<OverlayId> {
         self.scope.find_overlay(name)
     }
@@ -668,7 +700,7 @@ impl EngineState {
     pub fn get_signatures_with_examples(
         &self,
         include_hidden: bool,
-    ) -> Vec<(Signature, Vec<Example>, bool, bool)> {
+    ) -> Vec<(Signature, Vec<Example>, bool, bool, bool)> {
         self.get_decl_ids_sorted(include_hidden)
             .map(|id| {
                 let decl = self.get_decl(id);
@@ -680,6 +712,7 @@ impl EngineState {
                     decl.examples(),
                     decl.is_plugin().is_some(),
                     decl.get_block_id().is_some(),
+                    decl.is_parser_keyword(),
                 )
             })
             .collect()
@@ -967,7 +1000,7 @@ impl<'a> StateWorkingSet<'a> {
             permanent_state,
             external_commands: vec![],
             type_scope: TypeScope::default(),
-            currently_parsed_cwd: None,
+            currently_parsed_cwd: permanent_state.currently_parsed_cwd.clone(),
             parsed_module_files: vec![],
         }
     }
@@ -1551,7 +1584,13 @@ impl<'a> StateWorkingSet<'a> {
         None
     }
 
-    pub fn add_variable(&mut self, mut name: Vec<u8>, span: Span, ty: Type) -> VarId {
+    pub fn add_variable(
+        &mut self,
+        mut name: Vec<u8>,
+        span: Span,
+        ty: Type,
+        mutable: bool,
+    ) -> VarId {
         let next_id = self.next_var_id();
 
         // correct name if necessary
@@ -1561,7 +1600,7 @@ impl<'a> StateWorkingSet<'a> {
 
         self.last_overlay_mut().vars.insert(name, next_id);
 
-        self.delta.vars.push(Variable::new(span, ty));
+        self.delta.vars.push(Variable::new(span, ty, mutable));
 
         next_id
     }
@@ -1620,6 +1659,15 @@ impl<'a> StateWorkingSet<'a> {
                 .vars
                 .get(var_id - num_permanent_vars)
                 .expect("internal error: missing variable")
+        }
+    }
+
+    pub fn get_variable_if_possible(&self, var_id: VarId) -> Option<&Variable> {
+        let num_permanent_vars = self.permanent_state.num_vars();
+        if var_id < num_permanent_vars {
+            Some(self.permanent_state.get_var(var_id))
+        } else {
+            self.delta.vars.get(var_id - num_permanent_vars)
         }
     }
 

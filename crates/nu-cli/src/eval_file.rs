@@ -19,7 +19,6 @@ pub fn evaluate_file(
     engine_state: &mut EngineState,
     stack: &mut Stack,
     input: PipelineData,
-    is_perf_true: bool,
 ) -> Result<()> {
     // Translate environment variables from Strings to Values
     if let Some(e) = convert_env_values(engine_state, stack) {
@@ -29,6 +28,8 @@ pub fn evaluate_file(
     }
 
     let file = std::fs::read(&path).into_diagnostic()?;
+
+    engine_state.start_in_file(Some(&path));
 
     let mut working_set = StateWorkingSet::new(engine_state);
     trace!("parsing file: {}", path);
@@ -54,9 +55,7 @@ pub fn evaluate_file(
         std::process::exit(1);
     }
 
-    if is_perf_true {
-        info!("evaluate {}:{}:{}", file!(), line!(), column!());
-    }
+    info!("evaluate {}:{}:{}", file!(), line!(), column!());
 
     Ok(())
 }
