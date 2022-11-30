@@ -242,6 +242,8 @@ impl EngineState {
                             } else {
                                 self.config = v.clone().into_config().unwrap_or_default();
                             }
+
+                            env_vars.insert(k, self.config);
                         }
 
                         env_vars.insert(k, v);

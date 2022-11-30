@@ -775,6 +775,7 @@ impl Value {
                         }
                     }
                     "footer_mode" => {
+                        dbg!(&value);
                         if let Ok(b) = value.as_string() {
                             let val_str = b.to_lowercase();
                             config.footer_mode = match val_str.as_ref() {
