@@ -50,7 +50,6 @@ fn variables_dollar_sign_with_varialblecompletion() {
 fn variables_double_dash_argument_with_flagcompletion(mut completer: NuCompleter) {
     let suggestions = completer.complete("tst --", 6);
     let expected: Vec<String> = vec!["--help".into(), "--mod".into()];
-    // dbg!(&expected, &suggestions);
     match_suggestions(expected, suggestions);
 }
 
@@ -625,7 +624,7 @@ fn run_external_completion(block: &str, input: &str) -> Vec<Suggestion> {
     assert!(engine_state.merge_delta(delta).is_ok());
 
     // Merge environment into the permanent state
-    assert!(engine_state.merge_env(&mut stack, &dir).is_ok());
+    assert!(engine_state.merge_env(&mut stack, &dir, true).is_ok());
 
     let latest_block_id = engine_state.num_blocks() - 1;
 

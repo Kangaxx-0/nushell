@@ -492,12 +492,61 @@ pub fn eval_expression(
                         Expr::FullCellPath(cell_path) => match &cell_path.head.expr {
                             Expr::Var(var_id) | Expr::VarDecl(var_id) => {
                                 if var_id == &ENV_VARIABLE_ID {
-                                    // let mut lhs =
-                                    //     eval_expression(engine_state, stack, &cell_path.head)?;
-                                    //lhs.update_data_at_cell_path(&cell_path.tail, rhs)?;
                                     match &cell_path.tail[0] {
                                         PathMember::String { val, .. } => {
-                                            stack.add_env_var(val.to_string(), rhs);
+                                            dbg!(val);
+                                            if val == "config" {
+                                                let tail_len = &cell_path.tail.len();
+                                                let mut tail_record = match &cell_path.tail
+                                                    [tail_len - 1]
+                                                {
+                                                    PathMember::String { val, .. } => {
+                                                        Value::Record {
+                                                            cols: vec![val.to_string()],
+                                                            vals: vec![rhs],
+                                                            // Span doesn't matter here, it will be ignored during
+                                                            // `merge_env` call
+                                                            span: Span { start: 0, end: 0 },
+                                                        }
+                                                    }
+                                                    PathMember::Int { val, .. } => Value::Record {
+                                                        cols: vec![val.to_string()],
+                                                        vals: vec![rhs],
+                                                        // Span doesn't matter here, it will be ignored during
+                                                        // `merge_env` call
+                                                        span: Span { start: 0, end: 0 },
+                                                    },
+                                                };
+                                                for idx in 1..=tail_len - 1 {
+                                                    match &cell_path.tail[idx] {
+                                                        PathMember::String { val, .. } => {
+                                                            let mut new_env = Value::Record {
+                                                                cols: vec![val.to_string()],
+                                                                vals: vec![tail_record.clone()],
+                                                                span: Span { start: 0, end: 0 },
+                                                            };
+                                                            std::mem::swap(
+                                                                &mut new_env,
+                                                                &mut tail_record,
+                                                            );
+                                                        }
+                                                        PathMember::Int { val, .. } => {
+                                                            let mut new_env = Value::Record {
+                                                                cols: vec![val.to_string()],
+                                                                vals: vec![tail_record.clone()],
+                                                                span: Span { start: 0, end: 0 },
+                                                            };
+                                                            std::mem::swap(
+                                                                &mut new_env,
+                                                                &mut tail_record,
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                                stack.add_env_var(val.to_string(), tail_record);
+                                            } else {
+                                                stack.add_env_var(val.to_string(), rhs);
+                                            }
                                         }
                                         PathMember::Int { val, .. } => {
                                             stack.add_env_var(val.to_string(), rhs);

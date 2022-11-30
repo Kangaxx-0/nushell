@@ -151,7 +151,7 @@ pub fn evaluate_repl(
             &format!("entry #{}", entry_num),
             PipelineData::new(Span::new(0, 0)),
         );
-        engine_state.merge_env(stack, get_guaranteed_cwd(engine_state, stack))?;
+        engine_state.merge_env(stack, get_guaranteed_cwd(engine_state, stack), true)?;
     }
 
     loop {
@@ -166,7 +166,7 @@ pub fn evaluate_repl(
 
         // Before doing anything, merge the environment from the previous REPL iteration into the
         // permanent state.
-        if let Err(err) = engine_state.merge_env(stack, cwd) {
+        if let Err(err) = engine_state.merge_env(stack, cwd, true) {
             report_error_new(engine_state, &err);
         }
 
@@ -928,7 +928,7 @@ pub fn eval_hook(
     }
 
     let cwd = get_guaranteed_cwd(engine_state, stack);
-    engine_state.merge_env(stack, cwd)?;
+    engine_state.merge_env(stack, cwd, true)?;
 
     Ok(output)
 }

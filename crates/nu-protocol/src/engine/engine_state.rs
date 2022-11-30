@@ -229,6 +229,7 @@ impl EngineState {
         &mut self,
         stack: &mut Stack,
         cwd: impl AsRef<Path>,
+        allow_override_config: bool,
     ) -> Result<(), ShellError> {
         for mut scope in stack.env_vars.drain(..) {
             for (overlay_name, mut env) in scope.drain() {
@@ -236,7 +237,11 @@ impl EngineState {
                     // Updating existing overlay
                     for (k, v) in env.drain() {
                         if k == "config" {
-                            self.config = v.clone().into_config().unwrap_or_default();
+                            if allow_override_config {
+                                self.config.update(&v);
+                            } else {
+                                self.config = v.clone().into_config().unwrap_or_default();
+                            }
                         }
 
                         env_vars.insert(k, v);

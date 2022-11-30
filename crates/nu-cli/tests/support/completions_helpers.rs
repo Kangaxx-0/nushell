@@ -51,7 +51,7 @@ pub fn new_engine() -> (PathBuf, String, EngineState, Stack) {
     );
 
     // Merge environment into the permanent state
-    let merge_result = engine_state.merge_env(&mut stack, &dir);
+    let merge_result = engine_state.merge_env(&mut stack, &dir, true);
     assert!(merge_result.is_ok());
 
     (dir, dir_str, engine_state, stack)
@@ -122,5 +122,5 @@ pub fn merge_input(
     .is_ok());
 
     // Merge environment into the permanent state
-    engine_state.merge_env(stack, &dir)
+    engine_state.merge_env(stack, &dir, true)
 }

@@ -211,7 +211,7 @@ mod test_examples {
         );
 
         engine_state
-            .merge_env(&mut stack, &cwd)
+            .merge_env(&mut stack, &cwd, true)
             .expect("Error merging environment");
 
         let empty_input = PipelineData::new(Span::test_data());

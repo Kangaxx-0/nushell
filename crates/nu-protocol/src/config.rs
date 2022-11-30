@@ -89,6 +89,68 @@ pub struct Config {
     pub render_right_prompt_on_last_line: bool,
 }
 
+impl Config {
+    pub fn update(&mut self, value: &Value) {
+        if let Some(path) = value.retrieve_config_key() {
+            let new_config = value.clone().into_config().unwrap_or_default();
+            match path {
+                "filesize_metric" => self.filesize_metric = new_config.filesize_metric,
+                "table_mode" => self.table_mode = new_config.table_mode,
+                "external_completer" => self.external_completer = new_config.external_completer,
+                "use_ls_colors" => self.use_ls_colors = new_config.use_ls_colors,
+                "color_config" => self.color_config = new_config.color_config,
+                "use_grid_icons" => self.use_grid_icons = new_config.use_grid_icons,
+                "footer_mode" => self.footer_mode = new_config.footer_mode,
+                "float_precision" => self.float_precision = new_config.float_precision,
+                "max_external_completion_results" => {
+                    self.max_external_completion_results =
+                        new_config.max_external_completion_results
+                }
+                "filesize_format" => self.filesize_format = new_config.filesize_format,
+                "use_ansi_coloring" => self.use_ansi_coloring = new_config.use_ansi_coloring,
+                "quick_completions" => self.quick_completions = new_config.quick_completions,
+                "partial_completions" => self.partial_completions = new_config.partial_completions,
+                "completion_algorithm" => {
+                    self.completion_algorithm = new_config.completion_algorithm
+                }
+                "edit_mode" => self.edit_mode = new_config.edit_mode,
+                "max_history_size" => self.max_history_size = new_config.max_history_size,
+                "sync_history_on_enter" => {
+                    self.sync_history_on_enter = new_config.sync_history_on_enter
+                }
+                "history_file_format" => self.history_file_format = new_config.history_file_format,
+                "log_level" => self.log_level = new_config.log_level,
+                "keybindings" => self.keybindings = new_config.keybindings,
+                "menus" => self.menus = new_config.menus,
+                "hooks" => self.hooks = new_config.hooks,
+                "rm_always_trash" => self.rm_always_trash = new_config.rm_always_trash,
+                "shell_integration" => self.shell_integration = new_config.shell_integration,
+                "buffer_editor" => self.buffer_editor = new_config.buffer_editor,
+                "table_index_mode" => self.table_index_mode = new_config.table_index_mode,
+                "cd_with_abbreviations" => {
+                    self.cd_with_abbreviations = new_config.cd_with_abbreviations
+                }
+                "case_sensitive_completions" => {
+                    self.case_sensitive_completions = new_config.case_sensitive_completions
+                }
+                "enable_external_completion" => {
+                    self.enable_external_completion = new_config.enable_external_completion
+                }
+                "trim_strategy" => self.trim_strategy = new_config.trim_strategy,
+                "show_banner" => self.show_banner = new_config.show_banner,
+                "show_clickable_links_in_ls" => {
+                    self.show_clickable_links_in_ls = new_config.show_clickable_links_in_ls
+                }
+                "render_right_prompt_on_last_line" => {
+                    self.render_right_prompt_on_last_line =
+                        new_config.render_right_prompt_on_last_line
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Config {
         Config {
@@ -184,6 +246,184 @@ pub enum TrimStrategy {
 }
 
 impl Value {
+    // Based on the passing value, return the actual name of the config key
+    pub fn retrieve_config_key(&self) -> Option<&str> {
+        let v = self.as_record();
+        if let Ok(v) = v {
+            for (key, value) in v.0.iter().zip(v.1) {
+                let key = key.as_str();
+                match key {
+                    "ls" => {
+                        if let Ok((cols, _)) = value.as_record() {
+                            if let Some(key2) = cols.iter().next() {
+                                let key2 = key2.as_str();
+                                match key2 {
+                                    "use_ls_colors" => return Some("use_ls_colors"),
+                                    "clickable_links" => return Some("show_clickable_links_in_ls"),
+                                    _ => return None,
+                                }
+                            }
+                        } else {
+                            return None;
+                        }
+                    }
+                    "cd" => {
+                        if let Ok((cols, _)) = value.as_record() {
+                            if let Some(key2) = cols.iter().next() {
+                                let key2 = key2.as_str();
+                                match key2 {
+                                    "abbreviations" => return Some("cd_with_abbreviations"),
+                                    _ => return None,
+                                }
+                            }
+                        } else {
+                            return None;
+                        }
+                    }
+                    "rm" => {
+                        if let Ok((cols, _)) = value.as_record() {
+                            if let Some(key2) = cols.iter().next() {
+                                let key2 = key2.as_str();
+                                match key2 {
+                                    "always_trash" => return Some("rm_always_trash"),
+                                    _ => return None,
+                                }
+                            }
+                        } else {
+                            return None;
+                        }
+                    }
+                    "history" => {
+                        if let Ok((cols, _)) = value.as_record() {
+                            if let Some(key2) = cols.iter().next() {
+                                let key2 = key2.as_str();
+                                match key2 {
+                                    "sync_on_enter" => return Some("sync_history_on_enter"),
+                                    "max_size" => return Some("max_history_size"),
+                                    "file_format" => return Some("history_file_format"),
+                                    _ => return None,
+                                }
+                            }
+                        } else {
+                            return None;
+                        }
+                    }
+                    "completions" => {
+                        if let Ok((cols, _)) = value.as_record() {
+                            if let Some(key2) = cols.iter().next() {
+                                let key2 = key2.as_str();
+                                match key2 {
+                                    "quick" => return Some("quick_completions"),
+                                    "partial" => return Some("partial_completions"),
+                                    "algorithm" => return Some("completion_algorithm"),
+                                    "case_sensitive" => return Some("case_sensitive_completions"),
+                                    "external" => {
+                                        if let Ok((cols, _)) = value.as_record() {
+                                            if let Some(key3) = cols.iter().next() {
+                                                let key3 = key3.as_str();
+                                                match key3 {
+                                                    "max_results" => {
+                                                        return Some(
+                                                            "max_external_completion_results",
+                                                        )
+                                                    }
+                                                    "completer" => {
+                                                        return Some("external_completer")
+                                                    }
+                                                    "enable" => {
+                                                        return Some("enable_external_completion")
+                                                    }
+                                                    _ => return None,
+                                                }
+                                            }
+                                        } else {
+                                            return None;
+                                        }
+                                    }
+                                    _ => return None,
+                                }
+                            }
+                        } else {
+                            return None;
+                        }
+                    }
+                    "table" => {
+                        if let Ok((cols, _)) = value.as_record() {
+                            if let Some(key2) = cols.iter().next() {
+                                let key2 = key2.as_str();
+                                match key2 {
+                                    "mode" => return Some("table_mode"),
+                                    "index_mode" => return Some("table_index_mode"),
+                                    "trim" => return Some("trim_strategy"),
+                                    _ => return None,
+                                }
+                            }
+                        } else {
+                            return None;
+                        }
+                    }
+                    "filesize" => {
+                        if let Ok((cols, _)) = value.as_record() {
+                            if let Some(key2) = cols.iter().next() {
+                                let key2 = key2.as_str();
+                                match key2 {
+                                    "metric" => return Some("filesize_metric"),
+                                    "format" => return Some("filesize_format"),
+                                    _ => return None,
+                                }
+                            }
+                        } else {
+                            return None;
+                        }
+                    }
+                    "color_config" => return Some("color_config"),
+                    "use_grid_icons" => return Some("use_grid_icons"),
+                    "footer_mode" => return Some("footer_mode"),
+                    "float_precision" => return Some("float_precision"),
+                    "use_ansi_coloring" => return Some("use_ansi_coloring"),
+                    "edit_mode" => return Some("edit_mode"),
+                    "log_level" => return Some("log_level"),
+                    "menus" => return Some("menus"),
+                    "keybindings" => return Some("keybindings"),
+                    "hooks" => return Some("hooks"),
+                    "shell_integration" => return Some("shell_integration"),
+                    "buffer_editor" => return Some("buffer_editor"),
+                    "show_banner" => return Some("show_banner"),
+                    "render_right_prompt_on_last_line" => {
+                        return Some("render_right_prompt_on_last_line")
+                    }
+                    // Legacy config options (deprecated as of 2022-11-02)
+                    "use_ls_colors" => return Some("use_ls_colors"),
+                    "rm_always_trash" => return Some("rm_always_trash"),
+                    "history_file_format" => return Some("history_file_format"),
+                    "sync_history_on_enter" => return Some("sync_history_on_enter"),
+                    "max_history_size" => return Some("max_history_size"),
+                    "quick_completions" => return Some("quick_completions"),
+                    "partial_completions" => return Some("partial_completions"),
+                    "max_external_completion_results" => {
+                        return Some("max_external_completion_results")
+                    }
+                    "completion_algorithm" => return Some("completion_algorithm"),
+                    "case_sensitive_completions" => return Some("case_sensitive_completions"),
+                    "enable_external_completion" => return Some("enable_external_completion"),
+                    "external_completer" => return Some("external_completer"),
+                    "table_mode" => return Some("table_mode"),
+                    "table_index_mode" => return Some("table_index_mode"),
+                    "table_trim" => return Some("trim_strategy"),
+                    "show_clickable_links_in_ls" => return Some("show_clickable_links_in_ls"),
+                    "cd_with_abbreviations" => return Some("cd_with_abbreviations"),
+                    "filesize_metric" => return Some("filesize_metric"),
+                    "filesize_format" => return Some("filesize_format"),
+                    // End legacy options
+                    _ => return None,
+                }
+            }
+            None
+        } else {
+            None
+        }
+    }
+
     pub fn into_config(self) -> Result<Config, ShellError> {
         let v = self.as_record();
 

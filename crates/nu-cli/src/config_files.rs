@@ -91,7 +91,7 @@ pub fn eval_config_contents(
             // Merge the environment in case env vars changed in the config
             match nu_engine::env::current_dir(engine_state, stack) {
                 Ok(cwd) => {
-                    if let Err(e) = engine_state.merge_env(stack, cwd) {
+                    if let Err(e) = engine_state.merge_env(stack, cwd, false) {
                         let working_set = StateWorkingSet::new(engine_state);
                         report_error(&working_set, &e);
                     }

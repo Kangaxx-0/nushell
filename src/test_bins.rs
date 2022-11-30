@@ -169,7 +169,7 @@ pub fn nu_repl() {
 
         // Before doing anything, merge the environment from the previous REPL iteration into the
         // permanent state.
-        if let Err(err) = engine_state.merge_env(&mut stack, &cwd) {
+        if let Err(err) = engine_state.merge_env(&mut stack, &cwd, true) {
             outcome_err(&engine_state, &err);
         }
 
