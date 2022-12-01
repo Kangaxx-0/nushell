@@ -54,6 +54,7 @@ impl Expression {
                     Operator::Bits(Bits::BitXor) => 70,
                     Operator::Bits(Bits::BitOr) => 60,
                     Operator::Boolean(Boolean::And) => 50,
+                    Operator::Boolean(Boolean::Xor) => 45,
                     Operator::Boolean(Boolean::Or) => 40,
                     Operator::Assignment(_) => 10,
                 }
@@ -177,7 +178,7 @@ impl Expression {
             }
             Expr::CellPath(_) => false,
             Expr::DateTime(_) => false,
-            Expr::ExternalCall(head, args) => {
+            Expr::ExternalCall(head, args, _) => {
                 if head.has_in_variable(working_set) {
                     return true;
                 }
@@ -374,7 +375,7 @@ impl Expression {
             }
             Expr::CellPath(_) => {}
             Expr::DateTime(_) => {}
-            Expr::ExternalCall(head, args) => {
+            Expr::ExternalCall(head, args, _) => {
                 head.replace_in_variable(working_set, new_var_id);
                 for arg in args {
                     arg.replace_in_variable(working_set, new_var_id)
@@ -534,7 +535,7 @@ impl Expression {
             }
             Expr::CellPath(_) => {}
             Expr::DateTime(_) => {}
-            Expr::ExternalCall(head, args) => {
+            Expr::ExternalCall(head, args, _) => {
                 head.replace_span(working_set, replaced, new_span);
                 for arg in args {
                     arg.replace_span(working_set, replaced, new_span)

@@ -23,14 +23,16 @@ pub fn create_default_context() -> EngineState {
 
         // Database-related
         // Adds all related commands to query databases
-        #[cfg(feature = "database")]
+        #[cfg(feature = "sqlite")]
         add_database_decls(&mut working_set);
 
         // Core
         bind_command! {
             Alias,
             Ast,
+            Break,
             Commandline,
+            Continue,
             Debug,
             Def,
             DefEnv,
@@ -47,6 +49,7 @@ pub fn create_default_context() -> EngineState {
             Extern,
             For,
             Help,
+            HelpOperators,
             Hide,
             HideEnv,
             If,
@@ -57,9 +60,12 @@ pub fn create_default_context() -> EngineState {
             OverlayNew,
             OverlayHide,
             Let,
+            Loop,
             Metadata,
             Module,
             Mut,
+            Return,
+            Try,
             Use,
             Version,
             While,
@@ -363,6 +369,7 @@ pub fn create_default_context() -> EngineState {
             IntoDuration,
             IntoFilesize,
             IntoInt,
+            IntoRecord,
             IntoString,
         };
 

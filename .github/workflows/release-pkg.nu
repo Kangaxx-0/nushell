@@ -51,9 +51,9 @@ if $os in ['ubuntu-latest', 'macos-latest'] {
 # ----------------------------------------------------------------------------
 if $os in ['windows-latest'] {
     if ($flags | str trim | is-empty) {
-        cargo build --release --all --target $target --features=extra
+        cargo build --release --all --target $target
     } else {
-        cargo build --release --all --target $target --features=extra $flags
+        cargo build --release --all --target $target $flags
     }
 }
 
@@ -108,7 +108,7 @@ if $os in ['ubuntu-latest', 'macos-latest'] {
     let releaseStem = $'($bin)-($version)-($target)'
 
     $'(char nl)Download less related stuffs...'; hr-line
-    aria2c https://github.com/jftuga/less-Windows/releases/download/less-v590/less.exe -o less.exe
+    aria2c https://github.com/jftuga/less-Windows/releases/download/less-v608/less.exe -o less.exe
     aria2c https://raw.githubusercontent.com/jftuga/less-Windows/master/LICENSE -o LICENSE-for-less.txt
 
     # Create Windows msi release package
@@ -138,9 +138,9 @@ if $os in ['ubuntu-latest', 'macos-latest'] {
 
 def 'cargo-build-nu' [ options: string ] {
     if ($options | str trim | is-empty) {
-        cargo build --release --all --target $target --features=extra,static-link-openssl
+        cargo build --release --all --target $target --features=static-link-openssl
     } else {
-        cargo build --release --all --target $target --features=extra,static-link-openssl $options
+        cargo build --release --all --target $target --features=static-link-openssl $options
     }
 }
 
